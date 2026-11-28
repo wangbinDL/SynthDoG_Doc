@@ -93,6 +93,7 @@ def main():
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--seed", type=int, default=20261128)
     ap.add_argument("--select-only", action="store_true", help="reuse verify.jsonl, only (re)select and render")
+    ap.add_argument("--verify-only", action="store_true", help="verify new PDFs, keep the current selection untouched")
     a = ap.parse_args()
     pdfs, out = Path(a.pdfs), Path(a.out)
     (out / "sheets").mkdir(parents=True, exist_ok=True)
@@ -134,6 +135,9 @@ def main():
                 if k % 50 == 0:
                     print(f"  verified {k}/{len(todo)}", flush=True)
 
+    if a.verify_only:
+        print(f"VERIFY_ONLY_DONE verified={len(done)}", flush=True)
+        return
     # ---- select documents per (lang, type9)
     import fitz  # noqa: PLC0415
     cells = collections.defaultdict(list)
