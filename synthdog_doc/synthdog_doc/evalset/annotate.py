@@ -335,6 +335,7 @@ def main():
     ap.add_argument("--workers-per", default="", help="per-annotator concurrency, e.g. gemini=12,astra=16,opus=24")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--consensus-only", action="store_true")
+    ap.add_argument("--gt-dir", default=None, help="write consensus here instead of --pages (e.g. leave-one-out GT)")
     a = ap.parse_args()
     root = Path(a.pages)
     man = [json.loads(x) for x in (root / "manifest.jsonl").read_text().splitlines() if x.strip()]
@@ -393,6 +394,8 @@ def main():
                     print(f"  {k}/{len(jobs)} {dict(stats)}", flush=True)
         for pl in pools.values():
             pl.shutdown()
+    gdir = Path(a.gt_dir) if a.gt_dir else root
+    (gdir / "gt").mkdir(parents=True, exist_ok=True)
     pages, agree = [], []
     for m in man:
         answers = {}
@@ -403,11 +406,11 @@ def main():
         if len(answers) < 2:
             continue
         page, st = consensus(m, prep(m), answers)
-        (root / "gt" / f"{m['page_id']}.json").write_text(json.dumps(page, ensure_ascii=False))
+        (gdir / "gt" / f"{m['page_id']}.json").write_text(json.dumps(page, ensure_ascii=False))
         pages.append(page)
         agree.append(st)
-    (root / "omnidocbench_gt.json").write_text(json.dumps(pages, ensure_ascii=False))
-    (root / "agreement.jsonl").write_text("".join(json.dumps(s, ensure_ascii=False) + "\n" for s in agree))
+    (gdir / "omnidocbench_gt.json").write_text(json.dumps(pages, ensure_ascii=False))
+    (gdir / "agreement.jsonl").write_text("".join(json.dumps(s, ensure_ascii=False) + "\n" for s in agree))
     print(f"ANNOTATE_DONE pages_with_gt={len(pages)}", flush=True)
 
 

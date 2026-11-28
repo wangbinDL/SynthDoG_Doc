@@ -51,6 +51,8 @@ def main():
     ap.add_argument("--pages", default="/data/synthdog-doc/evalset/pages")
     ap.add_argument("--portal", default="/data/synthdog-doc/portal")
     ap.add_argument("--bench", default="/data/synthdog-doc/bench/runs/real1591/report.json")
+    ap.add_argument("--synthetic", default="/data/synthdog-doc/bench/runs/bench1980/report.json")
+    ap.add_argument("--release", default="/data/synthdog-doc/evalset/release/v1")
     a = ap.parse_args()
     root, portal = Path(a.pages), Path(a.portal)
     man = [json.loads(x) for x in (root / "manifest.jsonl").read_text().splitlines() if x.strip()]
@@ -91,7 +93,10 @@ def main():
                     f"<div class='kpi'><b>{three}</b>三方齐全的页</div>"
                     f"<div class='kpi'><b>{sum(ca) / len(ca):.2f}</b>区域类别平均一致率</div>"
                     f"<div class='kpi'><b>{sum(oa) / len(oa):.2f}</b>阅读顺序两两一致率</div>"
-                    f"<div class='kpi'><b>{ts['text_layer'] / max(1, sum(ts.values())) * 100:.0f}%</b>文本直接取自 PDF 文字层</div></div>")
+                    f"<div class='kpi'><b>{ts['text_layer'] / max(1, sum(ts.values()) - ts['missed_added']) * 100:.0f}%</b>文本块直接取自 PDF 文字层</div>"
+                    f"<div class='kpi'><b>{ts['missed_added']}</b>处漏框文字经 ≥2 人报告后补入</div></div>"
+                    "<p class='note'>一致率要打折看：区域和初始顺序都由检测器提出，标注者倾向于接受（锚定效应），所以一致率偏高；"
+                    "它说明三人没有大的分歧，不能单独证明真值正确。自评偏差见下方“留一法”。</p>")
     else:
         ann_html = "<p class='note'>标注进行中。</p>"
     # samples
@@ -116,19 +121,87 @@ def main():
     bp = Path(a.bench)
     if bp.exists():
         rep = json.loads(bp.read_text())
+        M = rep["models"]
         rows = []
-        for n, m in rep["models"].items():
+        best = max(m["overall"] for n, m in M.items() if n != "gt-oracle" and m.get("overall") is not None)
+        for n, m in M.items():
             if n == "gt-oracle":
                 continue
-            rows.append(f"<tr><td><b>{e(m['display'])}</b></td><td class='n'>{m['overall']:.2f}</td>"
+            loo = m.get("overall_loo")
+            rows.append(f"<tr><td><b>{e(m['display'])}</b></td>"
+                        f"<td class='n'><span class='{'best' if m['overall'] == best else ''}'>{m['overall']:.2f}</span></td>"
+                        f"<td class='n'>{f'{loo:.2f}' if loo is not None else '—'}</td>"
                         f"<td class='n'>{m['text_edit']:.3f}</td><td class='n'>{(m['formula_cdm'] or 0) * 100:.1f}</td>"
                         f"<td class='n'>{(m['table_teds'] or 0) * 100:.1f}</td><td class='n'>{m['reading_order_edit']:.3f}</td></tr>")
-        bench_html = ('<div class="scroll"><table class="t"><thead><tr><th>模型</th><th>综合分</th><th>文本编辑距离↓</th>'
-                      '<th>公式 CDM</th><th>表格 TEDS</th><th>阅读顺序↓</th></tr></thead><tbody>' + "".join(rows)
-                      + "</tbody></table></div>")
-        if rep.get("rank_corr"):
-            rc = rep["rank_corr"]
-            bench_html += f"<p>合成集与真实集的模型排名一致性：Spearman ρ = <b>{rc['spearman']:.2f}</b>，Kendall τ = <b>{rc['kendall']:.2f}</b>（共同的 10 个旧语种）。</p>"
+        bench_html = ('<div class="scroll"><table class="t"><thead><tr><th>模型</th><th>综合分 ↑</th><th>留一法综合分</th>'
+                      '<th>文本编辑距离 ↓</th><th>公式 CDM ↑</th><th>表格 TEDS ↑</th><th>阅读顺序 ↓</th></tr></thead><tbody>'
+                      + "".join(rows) + "</tbody></table></div>")
+        if "gt-oracle" in M:
+            bench_html += f"<p class='note'>标注自检（拿真值当答案）综合分 {M['gt-oracle']['overall']:.2f}。</p>"
+        # leave-one-out: every model scored on both reduced GTs; the subject's own shift vs the others' shift
+        var_names = sorted({v for m in M.values() for v in (m.get("variants") or {})})
+        if var_names:
+            vz = {"noastra": "去掉 GPT-6-Astra 的标注", "noopus": "去掉 Claude Opus 5.5 的标注"}
+            lrows = []
+            for n, m in M.items():
+                if n == "gt-oracle" or not m.get("variants"):
+                    continue
+                cells = []
+                for v in var_names:
+                    o = (m["variants"].get(v) or {}).get("overall")
+                    cells.append(f"<td class='n'>{o - m['overall']:+.2f}</td>" if o is not None else "<td class='n'>—</td>")
+                lrows.append(f"<tr><td><b>{e(m['display'])}</b></td>{''.join(cells)}</tr>")
+            bench_html += ("<h3 style='margin-top:14px'>留一法：换一种真值，分数变化多少</h3>"
+                           "<p>同一批预测，分别对“三人共识真值”和“去掉某位标注者后、只用另外两人重建的真值”打分。如果某个模型给自己出题占了便宜，"
+                           "去掉它自己那一票时它的分数会比别的模型掉得更多。</p>"
+                           '<div class="scroll"><table class="t"><thead><tr><th>模型</th>'
+                           + "".join(f"<th>{e(vz.get(v, v))}（分差）</th>" for v in var_names)
+                           + "</tr></thead><tbody>" + "".join(lrows) + "</tbody></table></div>")
+        syn = Path(a.synthetic)
+        if syn.exists():
+            S = json.loads(syn.read_text())["models"]
+            common = [n for n in M if n in S and n != "gt-oracle"]
+            if len(common) >= 3:
+                def rk(d):
+                    o = sorted(common, key=lambda k: -d[k])
+                    return {k: i for i, k in enumerate(o)}
+                ra, rb = rk({n: S[n]["overall"] for n in common}), rk({n: M[n]["overall"] for n in common})
+                k = len(common)
+                rho = 1 - 6 * sum((ra[x] - rb[x]) ** 2 for x in common) / (k * (k * k - 1))
+                conc = sum(1 for i in range(k) for j in range(i + 1, k)
+                           if (ra[common[i]] - ra[common[j]]) * (rb[common[i]] - rb[common[j]]) > 0)
+                tau = (2 * conc - k * (k - 1) / 2) / (k * (k - 1) / 2)
+                order_s = " > ".join(S[n]["display"] for n in sorted(common, key=lambda n: -S[n]["overall"]))
+                order_r = " > ".join(M[n]["display"] for n in sorted(common, key=lambda n: -M[n]["overall"]))
+                bench_html += (f"<h3 style='margin-top:14px'>与合成集的排名是否一致</h3><p>Spearman ρ = <b>{rho:.2f}</b>，"
+                               f"Kendall τ = <b>{tau:.2f}</b>（{k} 个模型）。</p><p class='note'>合成集（22 语 1980 页）：{e(order_s)}<br>"
+                               f"真实集：{e(order_r)}</p>")
+        langs_r = sorted({kk.split(": ")[1] for m in M.values() for kk in m["buckets"] if kk.startswith("sdd_lang: ")},
+                         key=lambda l: list(LANG_ZH).index(l) if l in LANG_ZH else 99)
+        lr = []
+        for n, m in M.items():
+            cells = []
+            for lg in langs_r:
+                o = (m["buckets"].get(f"sdd_lang: {lg}") or {}).get("overall")
+                te = (m["buckets"].get(f"sdd_lang: {lg}") or {}).get("text_edit")
+                v = o if o is not None else ((1 - te) * 100 if te is not None else None)
+                cells.append(f"<td class='n'><span class='{'weak' if v is not None and v < 80 else ''}'>{v:.1f}</span></td>"
+                             if v is not None else "<td class='n'>—</td>")
+            lr.append(f"<tr><td><b>{e(m['display'])}</b></td>{''.join(cells)}</tr>")
+        bench_html += ("<h3 style='margin-top:14px'>分语言</h3><div class='scroll'><table class='t'><thead><tr><th>模型</th>"
+                       + "".join(f"<th>{e(LANG_ZH.get(l, l))}</th>" for l in langs_r) + "</tr></thead><tbody>" + "".join(lr)
+                       + "</tbody></table></div><p class='note'>该语种的页面若没有公式或表格、算不出三项综合分，就显示文本得分 (1 − 文本编辑距离) × 100。红色 = 低于 80。</p>")
+    # release package
+    rel_html = "<p class='note'>发布包在标注完成后生成。</p>"
+    rm = Path(a.release) / "manifest.jsonl"
+    if rm.exists():
+        rman = [json.loads(x) for x in rm.read_text().splitlines() if x.strip()]
+        tiers = collections.Counter(x["tier"] for x in rman)
+        rel_html = (f"<div class='kpis'><div class='kpi'><b>{len(rman)}</b>发布页</div><div class='kpi'><b>{tiers.get('A', 0)}</b>A 层（含页面图像）</div>"
+                    f"<div class='kpi'><b>{tiers.get('B', 0)}</b>B 层（指针 + 渲染脚本）</div></div>"
+                    "<p>发布包：<code>omnidocbench_gt.json</code>（真值）、<code>manifest.jsonl</code>（原始网址、WARC 位置、页码、DPI、PDF 哈希、许可层）、"
+                    "<code>images/</code>（A 层图像）、<code>render_pages.py</code>（从原始 PDF 重建任意页，抽测与发布图像逐像素一致）、"
+                    "<code>annotations/</code>（三位标注者原始答案，可做留一法）、英文数据卡 README。</p>")
     style = (portal / "index.html").read_text(encoding="utf-8")
     style = style[style.index("<style>"):style.index("</style>") + len("</style>")]
     nav = "".join(f'<a href="{f}"{" class=\"on\"" if f == "evalset.html" else ""}>{t}</a>' for f, t in
@@ -153,7 +226,7 @@ def main():
 <section><h2>覆盖矩阵（文档数 / 页数）</h2>{cov}
 <p class="note">绿色 = 凑满 5 份文档；红色 / N/A = 不足 3 份或缺失。凑不齐的格不用合成页或别的语种补，如实留空。报纸、杂志、PPT 在中小语种里最难找。</p></section>
 <section><h2>标注质量</h2>{ann_html}</section>
-<section><h2>许可与发布</h2>
+<section><h2>许可与发布</h2>{rel_html}
 <div class="card"><p>按两层发布：A 层（政府、教育机构、开放许可期刊等可再分发的文档）发布页面图像 + 标注；B 层只发布原始 URL、CommonCrawl WARC 指针、页码、PDF 哈希、固定 DPI 渲染脚本和标注，限研究用途、提供下架通道。按域名粗分，当前约 <b>{n_open}</b> / {len(doms)} 份文档来自政府 / 教育机构域名，逐份许可仍需发布前核对。</p></div></section>
 <section><h2>标注样例</h2><div class="thumbs">{samp_html}</div></section>
 <section><h2>模型在真实集上的表现</h2>{bench_html}</section>
