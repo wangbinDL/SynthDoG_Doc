@@ -41,7 +41,17 @@ def key_and_base(name="main"):
 
 def _img_b64(path, max_side=None):
     data = Path(path).read_bytes()
-    mt = mimetypes.guess_type(str(path))[0] or "image/png"
+    # sniff the format from the bytes: file names are not reliable (and the Claude API rejects a wrong media_type)
+    if data[:3] == b"\xff\xd8\xff":
+        mt = "image/jpeg"
+    elif data[:8] == b"\x89PNG\r\n\x1a\n":
+        mt = "image/png"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        mt = "image/webp"
+    elif data[:6] in (b"GIF87a", b"GIF89a"):
+        mt = "image/gif"
+    else:
+        mt = mimetypes.guess_type(str(path))[0] or "image/png"
     return mt, base64.b64encode(data).decode()
 
 
@@ -58,6 +68,60 @@ def _sse(resp):
         yield "\n".join(buf)
 
 
+def is_gemini(model):
+    return model.startswith("gemini")
+
+
+def _gemini(base, k, model, prompt, images, system, max_tokens, effort, timeout, temperature):
+    """Google-native generateContent through the gateway (the protocol that accepts images for Gemini)."""
+    parts = [{"text": prompt}]
+    for p in images:
+        mt, b64 = _img_b64(p)
+        parts.append({"inline_data": {"mime_type": mt, "data": b64}})
+    cfg = {"maxOutputTokens": max_tokens}
+    if effort:
+        cfg["thinkingConfig"] = {"thinkingLevel": "HIGH" if effort in ("high", "xhigh", "max") else effort.upper()}
+    elif temperature is not None:
+        cfg["temperature"] = temperature
+    body = {"contents": [{"role": "user", "parts": parts}], "generationConfig": cfg}
+    if system:
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+    req = urllib.request.Request(f"{base}/gemini/v1beta/models/{model}:streamGenerateContent?alt=sse",
+                                 data=json.dumps(body).encode(), method="POST",
+                                 headers={"content-type": "application/json", "authorization": f"Bearer {k}"})
+    chunks, stop, usage, seen = [], None, {}, None
+    with OPENER.open(req, timeout=timeout) as r:
+        for pl in _sse(r):
+            if not pl or pl == "[DONE]":
+                continue
+            ev = json.loads(pl)
+            if ev.get("error"):
+                raise RuntimeError(f"stream error: {ev['error']}")
+            if (ev.get("promptFeedback") or {}).get("blockReason"):
+                raise RuntimeError(f"empty response stop=blocked:{ev['promptFeedback']['blockReason']}")
+            for c in ev.get("candidates") or []:
+                for prt in (c.get("content") or {}).get("parts") or []:
+                    if "text" in prt and not prt.get("thought"):
+                        chunks.append(prt["text"])
+                stop = c.get("finishReason") or stop
+            seen = ev.get("modelVersion") or seen
+            usage.update(ev.get("usageMetadata") or {})
+    text = "".join(chunks)
+    if not text.strip():
+        raise RuntimeError(f"empty response stop={stop}")
+    return text, {"model": seen or model, "stop": stop, "usage": usage}
+
+
+def gemini_model_for_key(name="mid", logical="gemini-4-argon"):
+    """Gateway model id of a Gemini model for a key: the key file pins "logical=actual,..." in MP_AGY_PIN."""
+    pin = _read_env(MP_DIR / "keys" / f"{name}.env", ["MP_AGY_PIN"]) or ""
+    for item in pin.split(","):
+        a, _, b = item.partition("=")
+        if a.strip() == logical and b.strip():
+            return b.strip()
+    return logical
+
+
 def is_claude(model):
     return model.startswith("claude") or "opus" in model or "fable" in model or "sonnet" in model
 
@@ -69,14 +133,16 @@ def call(model, prompt, images=(), system=None, max_tokens=8000, effort=None, ke
     last = None
     for attempt in range(retries):
         try:
+            if is_gemini(model):
+                return _gemini(base, k, model, prompt, images, system, max_tokens, effort, timeout, temperature)
             if is_claude(model):
                 return _claude(base, k, model, prompt, images, system, max_tokens, effort, timeout, temperature)
             return _openai(base, k, model, prompt, images, system, max_tokens, effort, timeout, temperature)
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "replace")[:400]
             last = f"HTTP {e.code}: {body}"
-            if e.code in (400, 401, 403, 404):
-                break
+            if e.code in (400, 401, 403, 404) and not (is_gemini(model) and "API key not valid" in body):
+                break                          # (the Gemini gateway intermittently answers a valid key with this 400)
         except Exception as e:  # noqa: BLE001
             last = repr(e)
         time.sleep(min(90, 4 * 2 ** attempt + random.random() * 3))
@@ -138,7 +204,8 @@ def _openai(base, k, model, prompt, images, system, max_tokens, effort, timeout,
         msgs.append({"role": "user", "content": content})
     else:
         msgs.append({"role": "user", "content": prompt})
-    body = {"model": model, "max_tokens": max_tokens, "stream": True, "messages": msgs}
+    body = {"model": model, "max_tokens": max_tokens, "stream": True, "messages": msgs,
+            "stream_options": {"include_usage": True}}   # token usage for cost accounting
     if effort:
         body["reasoning_effort"] = effort
     if temperature is not None and "astra" not in model and "sol" not in model:
@@ -212,8 +279,39 @@ def _fix_escapes(s):
     return "".join(out)
 
 
+def _balance_brackets(s):
+    """Repair the most common LLM JSON slip -- a stray or missing closing bracket -- by dropping closers that do not
+    match the open bracket (outside strings) and appending the missing ones at the end."""
+    out, stack, in_str, esc = [], [], False, False
+    pairs = {"}": "{", "]": "["}
+    for c in s:
+        if in_str:
+            out.append(c)
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c in "{[":
+            stack.append(c)
+        elif c in "}]":
+            if not stack or stack[-1] != pairs[c]:
+                continue                       # stray closer
+            stack.pop()
+        out.append(c)
+    out += ["}" if b == "{" else "]" for b in reversed(stack)]
+    return "".join(out)
+
+
 def _loads_lenient(s):
-    return json.loads(_fix_escapes(s), strict=False)
+    try:
+        return json.loads(_fix_escapes(s), strict=False)
+    except json.JSONDecodeError:
+        return json.loads(_balance_brackets(_fix_escapes(s)), strict=False)
 
 
 def extract_json(text):
