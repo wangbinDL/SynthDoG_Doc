@@ -28,6 +28,13 @@ ODB_SOURCE = {"ppt": "PPT2PDF", "paper_single": "academic_literature", "paper_do
 DOC_TYPES = ["ppt", "exam", "paper_single", "paper_double", "newspaper", "magazine", "book", "textbook", "report"]
 
 
+NO_BODY = {"header", "footer", "page_number", "abandon"}
+
+
+class EmptyPage(RuntimeError):
+    pass
+
+
 def build_spec(doc_type, lang, rng, version):
     from .doctypes import registry
     return registry.make(doc_type, lang, rng, version)
@@ -43,6 +50,9 @@ def finalize(name, spec, png, gt, out_dir, rng, do_degrade=True, overlay=False, 
     img = np.array(Image.open(io.BytesIO(png)).convert("RGB"))
     scale = img.shape[1] / gt["page"]["w"]
     blocks = X.build(gt, scale)
+    if spec.meta.get("page_role") != "advertisement" and all(b["cat"] in NO_BODY for b in blocks):
+        # content ran out (e.g. a continuation page past the last question): retried with fresh draws by the caller
+        raise EmptyPage(f"{name}: only page furniture, no body content")
     polys, index = X.collect_polys(blocks)
     branch = branch or (pick_branch(spec.doc_type, rng) if do_degrade else "digital")
     if do_degrade:
