@@ -639,8 +639,36 @@
     });
   };
 
+  // Thai has no spaces between words: split the Python-emitted '.w.seg' runs into dictionary words with the same
+  // ICU segmenter Chromium uses for line breaking, so tokens are line-break units (one rectangle each).
+  SDD.segmentThai = function () {
+    const segs = document.querySelectorAll('.w.seg');
+    if (!segs.length || typeof Intl === 'undefined' || !Intl.Segmenter) return;
+    const sg = new Intl.Segmenter('th', { granularity: 'word' });
+    const glue = /^[\s.,;:!?)\]»”’ๆฯ%]+$/;
+    segs.forEach((w) => {
+      const toks = [];
+      for (const s of sg.segment(w.textContent || '')) {
+        if (toks.length && glue.test(s.segment)) toks[toks.length - 1] += s.segment;
+        else toks.push(s.segment);
+      }
+      w.classList.remove('seg');
+      if (toks.length <= 1) return;
+      const frag = document.createDocumentFragment();
+      toks.forEach((t, i) => {
+        const e = w.cloneNode(false);
+        e.textContent = t;
+        frag.appendChild(e);
+        if (i < toks.length - 1) frag.appendChild(document.createElement('wbr'));
+      });
+      w.replaceWith(frag);
+      SDD.thaiSplit = (SDD.thaiSplit || 0) + 1;
+    });
+  };
+
   SDD.layout = function () {
     const t0 = performance.now();
+    SDD.segmentThai();
     SDD.renderMath();
     SDD.fitText();
     SDD.fitOptions();

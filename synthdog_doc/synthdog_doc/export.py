@@ -93,7 +93,14 @@ def to_odb(blocks, page_info, extra=None):
         for o in objs:
             for c in caps:
                 rel.append({"source_anno_id": f"box_id_{c}", "target_anno_id": f"box_id_{o}",
-                            "relation": "parent_son"})
+                            "relation_type": "parent_son"})
+    # paragraphs split across columns / pages: OmniDocBench "truncated" relations, merged by the scorer
+    bid2idx = {b.get("bid"): i for i, b in enumerate(blocks) if b.get("bid")}
+    for i, b in enumerate(blocks):
+        j = bid2idx.get(b.get("cont_of"))
+        if j is not None and j != i:
+            rel.append({"source_anno_id": f"box_id_{j}", "target_anno_id": f"box_id_{i}",
+                        "relation_type": "truncated"})
     return {"layout_dets": dets, "page_info": page_info, "extra": {"relation": rel, **(extra or {})}}
 
 

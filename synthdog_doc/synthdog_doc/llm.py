@@ -138,7 +138,8 @@ def _openai(base, k, model, prompt, images, system, max_tokens, effort, timeout,
         msgs.append({"role": "user", "content": content})
     else:
         msgs.append({"role": "user", "content": prompt})
-    body = {"model": model, "max_tokens": max_tokens, "stream": True, "messages": msgs}
+    body = {"model": model, "max_tokens": max_tokens, "stream": True, "messages": msgs,
+            "stream_options": {"include_usage": True}}   # token usage for cost accounting
     if effort:
         body["reasoning_effort"] = effort
     if temperature is not None and "astra" not in model and "sol" not in model:

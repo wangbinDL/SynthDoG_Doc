@@ -35,6 +35,12 @@ p{margin:0;}
 .u{text-decoration:underline;} .code{font-family:var(--f-mono);}
 .fontwarm{position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;}
 .katex{font-size:1.05em;}
+/* phase 2: space-less scripts. Tokens never break inside (the line breaker may only cut between tokens, which keeps
+   one rectangle per token for the ground truth); CJK uses strict kinsoku and inter-character justification. */
+#page:lang(zh) .w,#page:lang(ja) .w,#page:lang(th) .w{white-space:nowrap;}
+#page:lang(zh),#page:lang(ja){line-break:strict;text-justify:inter-character;font-feature-settings:"palt" 0;}
+#page:lang(ko){word-break:keep-all;}
+#page:lang(th){line-break:auto;}
 """
 
 

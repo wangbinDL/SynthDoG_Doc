@@ -349,6 +349,7 @@ def run(out_dir, langs, counts, model, effort, workers, corpus_dir, key="main"):
             obj = {"items": obj}
         obj["_idx"] = idx
         obj["_model"] = meta.get("model")
+        obj["_usage"] = meta.get("usage")          # token accounting for the cost model
         obj["_lang"] = lang
         with _lock:
             with open(out_dir / lang / f"{kind}.jsonl", "a", encoding="utf-8") as f:
