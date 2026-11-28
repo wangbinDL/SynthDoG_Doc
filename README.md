@@ -74,7 +74,7 @@ OmniDocBench 尺寸统计      10 语种排印规则（RTL、断字…）    输
 |---|---|
 | 语言扩展 | 10 → 22 种；中日文避头尾与按词断行、日文 / 繁中书籍竖排、泰文词典切词、韩文按语节断行、波斯 RTL 与本地数字；v7 盲评中评委把合成页误判为真的比例 Sol 24%、Opus 5%（v6 为 12% / 2%） |
 | 数据池 | 正文主池换成 FinePDFs（CommonCrawl 真实 PDF 全文，ODC-By），22 语种入池，经数采平台下载 57 个分片（216 GB）到 JFS |
-| 真实评测集 | 22 语 × 9 类真实 PDF 1591 页，PP-DocLayoutV3 区域 + 三模型（Gemini 4 Argon / GPT-6-Astra / Claude Opus 5.5）标注与共识，A/B 两层许可发布；单独分支 `feat/real-evalset` |
+| 真实评测集 | 22 语 × 9 类真实 PDF 1883 页（945 份文档，183 / 198 格凑满 5 份），PP-DocLayoutV3 区域 + 三模型（Gemini 4 Argon / GPT-6-Astra / Claude Opus 5.5）标注与共识，A/B 两层许可发布；单独分支 `feat/real-evalset` |
 | 模型评测 | 合成集 22 语 1980 页、7 个模型：Claude Opus 5.5 96.73 / GPT-6-Astra 95.86 / GPT-6.1-Sol 94.65 / Qwen3.8-27B 93.43 / MinerU2.5-Pro 90.91 / Qwen3.5-4B 88.79 / PaddleOCR-VL-1.6 87.75（OmniDocBench 综合分；标注自检 99.95） |
 | 批量生产 | 生产模式（浏览器常驻 + Parquet 分片）；Top-20 语 × 每语 1 万页 = 199,980 页，4 台 64 核 worker 并行 38 分钟内完成，0 失败，平均 1.69 核·秒 / 页，产物 147 GB；内容包改写按任务选模型（论文 DeepSeek-v4.1-Flash，试卷与新闻 GPT-6.1-Sol） |
 
