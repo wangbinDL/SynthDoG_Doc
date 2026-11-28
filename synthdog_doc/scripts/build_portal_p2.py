@@ -258,6 +258,42 @@ def build_benchmark(portal):
     page(portal, "benchmark.html", "模型评测", body)
 
 
+def build_production(portal):
+    P = json.loads((D / "portal_src/production.json").read_text()) if (D / "portal_src/production.json").exists() else {}
+    bench = P.get("bench", [])
+    rows = [[f"<b>{e(b['name'])}</b>", e(b.get("desc")), e(b["pages"]), f"{b['wall']:.0f}", f"{b['pages'] / b['wall']:.2f}",
+             f"{b['cpu'] / b['pages']:.2f}", f"{b['cpu'] / b['wall']:.0f}"] for b in bench]
+    btbl = table(["配置", "说明", "页数", "墙钟（秒）", "页 / 秒", "实耗 CPU 核·秒 / 页", "平均占用核数"], rows,
+                 num_cols=(2, 3, 4, 5, 6)) if rows else "<p class='note'>压测进行中。</p>"
+    bo = P.get("bakeoff", {})
+    borows = [[f"<b>{e(r['name'])}</b>", e(r.get("all")), e(r.get("paper")), e(r.get("exam")), e(r.get("news")),
+               e(r.get("cost_pack")), e(r.get("note", ""))] for r in bo.get("rows", [])]
+    botbl = table(["候选模型", "不劣于 Sol（全部）", "论文", "试卷", "新闻编辑", "每包成本（USD，公开价量级）", "说明"], borows) \
+        if borows else ""
+    prod = P.get("run200k", {})
+    prod_html = "".join(f"<li>{e(k)}：<b>{e(v)}</b></li>" for k, v in prod.items()) or "<li>Top-20 × 1 万页压测进行中。</li>"
+    cost = P.get("cost", {})
+    cost_html = "".join(f"<li>{e(k)}：<b>{e(v)}</b></li>" for k, v in cost.items())
+    body = f"""
+<section><h1>批量生产：速度、成本与改写模型选型</h1>
+<p class="sub">渲染本身不花 API 钱，只花 CPU；钱主要花在大模型写内容包（论文、试卷、PPT、研报、教材、杂志专题与新闻编辑）。所以先把“每页要几个 CPU 核·秒”和“每页摊多少 token”分开测清楚，再按任务给内容包选性价比最高的模型。</p></section>
+<section><h2>渲染速度（同一批页面，不同配置）</h2>{btbl}
+<p class="note">“实耗 CPU”是所有子进程（Python + Chromium）真实消耗的核·秒，不是申请核数 × 时间。第一阶段的“7.3 核·秒 / 页”是按申请核数折算的。</p>
+<div class="grid g2" style="margin-top:14px"><div class="card"><h3>做了哪些优化</h3><ul>
+<li>浏览器常驻：每个进程只启动一次 Chromium，跨批复用、每 400 页回收（原来每 6 页就重启一次）。</li>
+<li>输出改为大分片：每批页面写成一个 zstd 压缩的 Parquet 分片（图像 JPEG 字节 + 标注 + Markdown + 元数据），不再每页 4 个小文件。</li>
+<li>JPEG 截图、OpenCV 单线程：避免几十个进程互相抢线程。</li>
+<li>分阶段计时：排版 JS 只要约 30 毫秒；真正耗时的是截图编码、图像退化与解码 —— 下一步优化方向。</li></ul></div>
+<div class="card"><h3>Top-20 × 1 万页压测</h3><ul>{prod_html}</ul></div></div></section>
+<section><h2>内容包改写模型选型（bake-off）</h2>
+<p>同样的提示词和真实种子文本，7 个难语种（阿拉伯、印地、孟加拉、日、泰、繁中、德）× 3 类任务（论文、试卷、新闻编辑）× 每格 10 包；评委不评自家模型（Opus 评 GPT / DeepSeek / Gemini，Gemini 评 Sonnet），A/B 位置随机。</p>
+{botbl}
+<p class="note">{e(bo.get("conclusion", ""))}</p></section>
+<section><h2>成本模型</h2><div class="card"><ul>{cost_html}</ul></div></section>
+"""
+    page(portal, "production.html", "批量生产", body)
+
+
 def build_p2(portal):
     body = """
 <section><h1>第二阶段总览</h1>
@@ -277,7 +313,7 @@ def build_p2(portal):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--portal", default=str(D / "portal"))
-    ap.add_argument("--only", default="p2,languages,datapool,benchmark")
+    ap.add_argument("--only", default="p2,languages,datapool,benchmark,production")
     a = ap.parse_args()
     portal = Path(a.portal)
     todo = a.only.split(",")
@@ -289,6 +325,8 @@ def main():
         build_datapool(portal)
     if "benchmark" in todo:
         build_benchmark(portal)
+    if "production" in todo:
+        build_production(portal)
     print("built", todo)
 
 

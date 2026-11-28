@@ -1,5 +1,6 @@
 """Per-language text pools (Wikipedia + national web) and LLM content packs, with slot-typed samplers."""
 import json
+import os
 import random
 import re
 import unicodedata
@@ -9,6 +10,10 @@ from pathlib import Path
 from .textkit import clean_text, fix_punct, is_english, normalize
 
 CORPUS_DIR = Path("/data/synthdog-doc/corpus")
+# Real-document prose from the FinePDFs pool (scripts/datapool/build_prose_sample.py): the JFS copy on workers, a small
+# /data copy elsewhere. Empty -> pages fall back to Wikipedia text.
+POOL_DIRS = [Path(p) for p in os.environ.get(
+    "SDD_POOL_DIRS", "/mnt/wangbin02-jfs/processed/synthdog_doc/datapool/v1:/data/synthdog-doc/pool_prose").split(":") if p]
 CONTENT_DIR = Path("/data/synthdog-doc/content")
 
 _SITE_SUFFIX = re.compile(r"\s*[|\-–—:»·•]\s*[^|\-–—:»·•]{2,40}$")
@@ -68,6 +73,35 @@ class Corpus:
                               if good_para(p, 40) and not is_english(p, lang)]
             a["sections"] = [s for s in a["sections"] if s["paras"]]
         self.wiki = [a for a in self.wiki if a["sections"]]
+        self.pool = []
+        for d in POOL_DIRS:
+            f = d / lang / "prose_sample.jsonl" if (d / lang / "prose_sample.jsonl").exists() else d / f"{lang}.jsonl"
+            if f.exists():
+                cap = int(os.environ.get("SDD_POOL_MAX_DOCS", "600"))   # per renderer process: bounded memory
+                rows = []
+                with open(f, encoding="utf-8") as fh:
+                    for k, line in enumerate(fh):
+                        if k >= cap:
+                            break
+                        try:
+                            rows.append(json.loads(line))
+                        except Exception:  # noqa: BLE001
+                            pass
+                cjk = lang in ("zh-Hans", "zh-Hant", "ja", "th")
+                for a in rows:
+                    n_in = sum(len(sct.get("paras", [])) for sct in a.get("sections", []))
+                    for sct in a.get("sections", []):
+                        sct["paras"] = [fix_punct(clean_text(normalize(x.replace("\u0640", "")), lang), lang)
+                                        for x in sct.get("paras", [])
+                                        if good_para(x, 40) and not is_english(x, lang) and self._prose_ok(x, cjk)]
+                    a["sections"] = [sct for sct in a.get("sections", []) if sct["paras"]]
+                    n_ok = sum(len(sct["paras"]) for sct in a["sections"])
+                    chars = sum(len(x) for sct in a["sections"] for x in sct["paras"])
+                    # keep documents that are mostly running prose (not catalogues, notices or forms)
+                    if a["sections"] and n_ok >= 0.7 * n_in and chars / max(1, n_ok) >= (100 if cjk else 250):
+                        a.setdefault("title", "")
+                        self.pool.append(a)
+                break
         if not self.news and not self.national:
             # no national-web text (fetch failed): fall back to Wikipedia articles shaped like news items
             self.national = [{"title": a["title"], "paras": [p for s in a["sections"] for p in s["paras"]][:12],
@@ -90,6 +124,32 @@ class Corpus:
         if not hasattr(self, "_long"):
             self._long = sorted(self.wiki, key=lambda a: -sum(len(p) for s in a["sections"] for p in s["paras"]))
         return rng.choice(self._long[: max(1, len(self._long) // 8)])
+
+    @staticmethod
+    def _prose_ok(par, cjk):
+        """Book-like prose: no extraction garbage (letter runs), no catalogue / table syntax, real sentences."""
+        if re.search(r"(\w)\1{3,}", par) or "```" in par:
+            return False
+        if re.search(r"[\uFB50-\uFDFF\uFE70-\uFEFF]", par):   # Arabic presentation forms: broken PDF extraction
+            return False
+        if sum(par.count(c) for c in ">|[]{}<") > 0.01 * len(par) or par.count("(") > 4:
+            return False
+        ends = len(re.findall(r"[.!?।۔؟。！？]", par))
+        if ends == 0:
+            return False
+        return len(par) / ends >= (20 if cjk else 40)
+
+    def pool_article(self, rng, min_chars=0):
+        """A real document's prose (FinePDFs pool) shaped like wiki_article(); falls back to Wikipedia."""
+        if not self.pool:
+            return self.wiki_article(rng, min_chars)
+        for _ in range(30):
+            a = rng.choice(self.pool)
+            if sum(len(p) for s in a["sections"] for p in s["paras"]) >= min_chars:
+                if not a.get("title"):
+                    a = dict(a, title=next((s["heading"] for s in a["sections"] if s["heading"]), ""))
+                return a
+        return rng.choice(self.pool)
 
     def headlines(self, rng, n, max_len=110):
         pool = [a["title"] for a in (self.news or self.national) if 15 <= len(a["title"]) <= max_len]

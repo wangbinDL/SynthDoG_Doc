@@ -41,7 +41,17 @@ def key_and_base(name="main"):
 
 def _img_b64(path, max_side=None):
     data = Path(path).read_bytes()
-    mt = mimetypes.guess_type(str(path))[0] or "image/png"
+    # sniff the format from the bytes: file names are not reliable (and the Claude API rejects a wrong media_type)
+    if data[:3] == b"\xff\xd8\xff":
+        mt = "image/jpeg"
+    elif data[:8] == b"\x89PNG\r\n\x1a\n":
+        mt = "image/png"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        mt = "image/webp"
+    elif data[:6] in (b"GIF87a", b"GIF89a"):
+        mt = "image/gif"
+    else:
+        mt = mimetypes.guess_type(str(path))[0] or "image/png"
     return mt, base64.b64encode(data).decode()
 
 

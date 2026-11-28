@@ -108,7 +108,12 @@ class BookPage(Doc):
         r = self.rng
         W, H = self.W, self.H
         cp = C.corpus(self.lang)
-        art = cp.wiki_article(r, 6000)
+        # v7: non-fiction pages take real-document prose from the FinePDFs pool (wiki text read as "scraped lists")
+        use_pool = self.version >= 7 and getattr(cp, "pool", None) and r.random() < 0.5
+        art = cp.pool_article(r, 6000) if use_pool else cp.wiki_article(r, 6000)
+        if use_pool and not art.get("title"):
+            art = dict(art, title=cp.wiki_article(r)["title"])
+        self.meta["text_source"] = "finepdfs_pool" if use_pool else "wikipedia"
         body_pt = r.choice([10, 10.5, 11, 11.5, 12]) if self.genre != "textbook" else r.choice([10, 10.5, 11])
         lh = self.lh(r.uniform(1.25, 1.5))
         body_px = self.pt(body_pt)
