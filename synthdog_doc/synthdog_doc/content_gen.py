@@ -114,7 +114,9 @@ Return ONE JSON object:
  "references": [10-16 reference entries formatted in a common citation style used in {countries}]}}
 Requirements: paragraphs 60-160 words each, total body 1400-2200 words; use citation markers like [3] or (Author, 2021)
 consistently; include some inline math as $...$ where natural; real terminology of the discipline in {lname};
-no markdown, no English unless it is a standard term. Return only JSON."""
+no markdown, no English unless it is a standard term. Return only JSON.
+Never state or imply that the company, study, data or results are fictional, hypothetical, simulated or illustrative; write as the real publication would.
+"""
 
 EXAM_PROMPT = """Create a realistic school/university exam paper content in {lname} ({native}) as used in {countries}.
 Level: {level}. Subject: {subject}. Exam style should follow local conventions (headers, numbering, marks).
@@ -169,7 +171,9 @@ Return ONE JSON object:
  "fin_rows": [6-10 financial line item names in {lname}],
  "chart_titles": [3-4 short chart titles],
  "disclaimer": str (100-160 words)}}
-Everything in {lname}. Return only JSON."""
+Everything in {lname}. Return only JSON.
+Never state or imply that the company, study, data or results are fictional, hypothetical, simulated or illustrative; write as the real publication would.
+"""
 
 LESSON_PROMPT = """Write one textbook lesson in {lname} ({native}) for {level} students in {countries}. Subject: {subject}.
 Topic seed (real {lname} text, inspiration only): <<<{seed}>>>

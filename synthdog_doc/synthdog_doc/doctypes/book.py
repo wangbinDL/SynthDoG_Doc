@@ -175,7 +175,8 @@ class BookPage(Doc):
                 flow.append(B.heading(heads[hi], self.lang, level=2, cls="bsh"))
                 hi += 1
                 first = True
-            if self.genre == "textbook" and r.random() < 0.08:
+            if self.genre == "textbook" and r.random() < (0.0 if self.version >= 7 else 0.08):
+                # (v7: dropped -- a random pool photo with a random caption never matched the chapter)
                 ph = A.pick(r, "figure") or A.pick(r, "photo")
                 if ph:
                     cap = f"{C.L(self.lang, 'Figure', 'Fig.', grp='paper')} {self.num(chap_no)}.{self.num(r.randint(1, 9))} " \
@@ -186,6 +187,10 @@ class BookPage(Doc):
             if not first and i < 4 and r.random() < 0.3 and len(footnotes) < 2:
                 # footnote text taken from the same article (a later paragraph), so it is on-topic
                 later = [q for q in paras[i + 1:] if 40 < len(q)]
+                if self.version >= 7:
+                    # footnotes must not repeat what the page itself prints: take them from the article's tail,
+                    # well beyond the paragraphs one page can hold
+                    later = [q for q in paras[i + 12:] if 40 < len(q)]
                 fn_txt = re.split(r"(?<=[.!?।۔؟])\s+", r.choice(later))[0][:220] if later else ""
                 if fn_txt:
                     footnotes.append(fn_txt)

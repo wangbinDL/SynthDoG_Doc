@@ -152,6 +152,7 @@ def fix_math_delims(text):
 
 
 def esc(s):
+    s = str(s).replace("\uE000", "$")
     return html.escape(str(s), quote=True)
 
 
@@ -358,6 +359,8 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
         text = to_native_digits(text, lang)
     script = DOC.get("script")
     out = []
+    if "$" in text:                          # "$1,800 from $2,000" is money, not inline LaTeX
+        text = re.sub(r"\$(?=\d[\d.,]*(?:\s|$|[^\d$]))(?![^$]*[\\^_{}])", "\uE000", text)
     if _segment_of(lang) == "cjk" and re.search(r"[_^]", text):
         text = cjk_math_wrap(text)
     short_cjk = len(text.strip()) <= 40

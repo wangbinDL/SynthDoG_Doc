@@ -161,7 +161,26 @@ def _deep_clean(o, lang):
 
 _HEDGE = re.compile(r"hypothetic|hipotétic|hypothétique|hypothetisch|гипотетическ|काल्पनिक|افتراضي|خيالي|فرضی|"
                     r"hipotetis|ficti|fiktiv|fictif|imaginär|imaginaire|imaginari|illustrative example|ilustrativ|"
-                    r"illustratif|beispielhaft|نموذج(?:ا|ًا) إجرائي", re.I)
+                    r"illustratif|beispielhaft|نموذج(?:ا|ًا) إجرائي|"
+                    # phase 2 languages
+                    r"\billustrative\b|\bsimulated\b|for illustration|虚构|虛構|假设性|假設性|示意性|仅供示例|僅供示例|"
+                    r"架空|仮想の|想定上|가상의|허구|สมมติ|hư cấu|giả định|minh họa|kurgusal|varsayımsal|temsili|"
+                    r"fittizi|ipotetic|fikcyjn|hipotetyczn|fictief|illustratief|خیالی|فرضی", re.I)
+_SENT_SPLIT = re.compile(r"(?<=[.!?।۔؟。！？])\s*")
+
+
+def _strip_hedges(x):
+    """Drop sentences that call the study / company / data hypothetical, fictional or illustrative."""
+    if isinstance(x, str):
+        if not _HEDGE.search(x):
+            return x
+        kept = [t for t in _SENT_SPLIT.split(x) if t and not _HEDGE.search(t)]
+        return " ".join(kept) if kept else x
+    if isinstance(x, list):
+        return [_strip_hedges(v) for v in x]
+    if isinstance(x, dict):
+        return {k: (v if str(k).startswith("_") else _strip_hedges(v)) for k, v in x.items()}
+    return x
 _SCRIPT_OK = {"latin": ("latin",), "cyrillic": ("cyrillic", "latin"), "devanagari": ("devanagari", "latin"),
               "bengali": ("bengali", "latin"), "arabic": ("arabic", "latin")}
 
@@ -214,6 +233,7 @@ def packs(lang, kind):
         # packs whose text keeps saying the study / company is hypothetical or fictional read as generator output
         rows = [r for r in rows if len(_HEDGE.findall(json.dumps({k: v for k, v in r.items() if not k.startswith("_")},
                                                                  ensure_ascii=False))) < 2] or rows
+        rows = [_strip_hedges(r) for r in rows]
         # merge second-pass consistency enrichment (pack_enrich.py) by _idx
         ext = {d.get("_idx"): d for d in _read_jsonl(CONTENT_DIR / lang / f"{kind}_x.jsonl")}
         for r in rows:

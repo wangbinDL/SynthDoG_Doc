@@ -17,10 +17,16 @@ from ..textkit import esc, words_html
 HEADER_STYLES = ["board", "school_box", "university", "simple", "ministry", "grid", "left"]
 NUM_STYLES = ["dot", "paren", "q", "word", "bold_dot"]
 TF = {"es": "V / F", "fr": "V / F", "pt": "V / F", "de": "R / F", "id": "B / S", "ru": "Да / Нет",
-      "ar": "صح / خطأ", "ur": "درست / غلط", "hi": "सही / गलत", "bn": "সত্য / মিথ্যা"}
+      "ar": "صح / خطأ", "ur": "درست / غلط", "hi": "सही / गलत", "bn": "সত্য / মিথ্যা",
+      # phase 2
+      "en": "T / F", "zh-Hans": "对 / 错", "zh-Hant": "是 / 非", "ja": "○ / ×", "ko": "O / X", "vi": "Đ / S",
+      "th": "ถูก / ผิด", "tr": "D / Y", "fa": "درست / نادرست", "it": "V / F", "pl": "P / F", "nl": "J / O"}
 MARK_WORDS = {"es": ("punto", "puntos"), "fr": ("point", "points"), "pt": ("ponto", "pontos"),
               "de": ("Punkt", "Punkte"), "id": ("poin", "poin"), "hi": ("अंक", "अंक"), "bn": ("নম্বর", "নম্বর"),
-              "ur": ("نمبر", "نمبر")}
+              "ur": ("نمبر", "نمبر"),
+              "zh-Hans": ("分", "分"), "zh-Hant": ("分", "分"), "ja": ("点", "点"), "ko": ("점", "점"),
+              "vi": ("điểm", "điểm"), "th": ("คะแนน", "คะแนน"), "tr": ("puan", "puan"), "fa": ("نمره", "نمره"),
+              "it": ("punto", "punti"), "pl": ("pkt", "pkt"), "nl": ("punt", "punten")}
 MATH_SUBJ = re.compile(r"math|matem|mathé|математ|गणित|গণিত|ریاضی|رياضيات|fisika|physi|física|физик|भौतिक|"
                        r"পদার্থ|طبیعیات|فيزياء|matemática|mathematik|matematika", re.I)
 FAKE = re.compile(r"fikti|fictic|fictif|fictional|ficcion|फर्जी|কাল্পনিক|خيالي|فرضی", re.I)
@@ -36,8 +42,10 @@ def plural_marks(lang, n):
     return sg if n == 1 else pl
 
 
-_QWORDS = r"(?:Question|Q|Pregunta|Questão|Frage|Aufgabe|Soal|Вопрос|Задание|प्रश्न|প্রশ্ন|سوال|السؤال|Exercice|Ejercicio|Exercício)"
-_QLEAD = re.compile(r"^\s*(?:" + _QWORDS + r"\s*)?[0-9০-৯०-९٠-٩۰-۹]{1,3}\s*[\.\):：۔।॥\-–]\s*", re.I)
+_QWORDS = (r"(?:Question|Q|Pregunta|Questão|Frage|Aufgabe|Soal|Вопрос|Задание|प्रश्न|প্রশ্ন|سوال|السؤال|Exercice|"
+           r"Ejercicio|Exercício|問|第|문제|문항|Câu|Bài|ข้อ|Soru|Domanda|Esercizio|Pytanie|Zadanie|Vraag|Opgave|سؤال)")
+_QLEAD = re.compile(r"^\s*(?:" + _QWORDS + r"\s*)?[0-9０-９০-৯०-९٠-٩۰-۹๐-๙]{1,3}\s*(?:题|題|번|問)?\s*"
+                    r"[\.\):：．、۔।॥\-–]\s*", re.I)
 _INLINE_SUBS = re.compile(r"(?:^|\s)\(?([a-dа-гअ-घক-ঘ])\)\s")
 
 

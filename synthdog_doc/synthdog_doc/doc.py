@@ -34,6 +34,9 @@ NATIVE_DIGIT_P = {
     "hi": {"default": 0.25, "paper": 0.08, "report": 0.08, "ppt": 0.12, "exam": 0.3, "textbook": 0.35},
     "ar": {"default": 0.5, "paper": 0.35, "report": 0.4, "ppt": 0.45},
     "ur": {"default": 0.4, "paper": 0.25, "report": 0.25, "newspaper": 0.55, "exam": 0.45},
+    # phase 2: Iranian print overwhelmingly uses Persian digits; Thai digits appear mainly in official / school papers
+    "fa": {"default": 0.85, "paper": 0.7, "report": 0.6, "ppt": 0.6},
+    "th": {"default": 0.08, "exam": 0.15, "newspaper": 0.12},
 }
 
 
