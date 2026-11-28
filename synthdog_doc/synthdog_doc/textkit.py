@@ -329,6 +329,18 @@ def cjk_tokens(s):
     return out
 
 
+# CJK running text glues LaTeX-ish variables to ideographs ("其中c_i为第i个命题，p_{ij}^{(k)}为…"); without spaces the
+# per-word math detection never sees them, so wrap such runs in $...$ first.
+_CJK_MATH = re.compile(r"(?<![A-Za-z0-9$\\{}])((?:\\[A-Za-z]+|[A-Za-zα-ωΑ-Ω])(?:[_^](?:\{[^{}$]{1,40}\}|[A-Za-z0-9]))+)"
+                       r"(?![A-Za-z0-9}])")
+
+
+def cjk_math_wrap(text):
+    parts = _LATEX_INLINE.split(text) if "$" in text else [text]
+    return "".join(p if (p.startswith("$") and p.endswith("$") and len(p) > 2) else _CJK_MATH.sub(r"$\1$", p)
+                   for p in parts)
+
+
 def _segment_of(lang):
     lang = lang or DOC.get("lang")
     return LANGS[lang].segment if lang in LANGS else "space"
@@ -346,6 +358,8 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
         text = to_native_digits(text, lang)
     script = DOC.get("script")
     out = []
+    if _segment_of(lang) == "cjk" and re.search(r"[_^]", text):
+        text = cjk_math_wrap(text)
     parts = _LATEX_INLINE.split(text) if "$" in text else [text]
     for part in parts:
         if not part:
