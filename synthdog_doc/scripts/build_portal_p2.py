@@ -250,6 +250,20 @@ def rank_corr(a, b):
     return {"spearman": rho, "kendall": (conc - disc) / (n * (n - 1) / 2), "n": n}
 
 
+def partial_overall(b):
+    """Bucket overall; when the bucket has no formulas or no tables, the mean of the available components with a
+    '*' marker (the ODB formula needs all three)."""
+    if not b:
+        return None
+    if b.get("overall") is not None:
+        return b["overall"]
+    comps = [(1 - b["text_edit"]) * 100 if b.get("text_edit") is not None else None,
+             b["formula_cdm"] * 100 if b.get("formula_cdm") is not None else None,
+             b["table_teds"] * 100 if b.get("table_teds") is not None else None]
+    comps = [c for c in comps if c is not None]
+    return (sum(comps) / len(comps), "*") if comps else None
+
+
 def build_benchmark(portal):
     rep = json.loads((D / "bench/runs/bench1980/report.json").read_text())
     sub = {k: json.loads((D / f"bench/runs/{k}/report.json").read_text())["models"] for k in ("bench900", "bench1080")}
@@ -288,8 +302,14 @@ def build_benchmark(portal):
                 vals = [(lambda b: (1 - b["text_edit"]) * 100 if b and b.get("text_edit") is not None else None)(
                     bs.get(f"{prefix}: {k}")) for k in keys]
             else:
-                vals = [(bs.get(f"{prefix}: {k}") or {}).get("overall") for k in keys]
-            cells = [f'<span class="{"weak" if v < 80 else ""}">{v:.1f}</span>' if v is not None else "—" for v in vals]
+                vals = [partial_overall(bs.get(f"{prefix}: {k}")) for k in keys]
+            cells = []
+            for v in vals:
+                if v is None:
+                    cells.append("—")
+                    continue
+                x, star = v if isinstance(v, tuple) else (v, "")
+                cells.append(f'<span class="{"weak" if x < 80 else ""}">{x:.1f}{star}</span>')
             out.append([f"<b>{e(Ms[n]['display'])}</b>"] + cells)
         return table(["模型"] + [e(labels.get(k, k)) for k in keys], out, num_cols=tuple(range(1, len(keys) + 1)))
     LJ = json.loads((D / "portal_src/languages.json").read_text())["languages"]
@@ -318,7 +338,19 @@ def build_benchmark(portal):
         if rc:
             real_html += (f"<p>合成集（22 语）与真实集的模型排名一致性：Spearman ρ = <b>{rc['spearman']:.2f}</b>，"
                           f"Kendall τ = <b>{rc['kendall']:.2f}</b>（{rc['n']} 个模型）。</p>")
+        top = sorted((m for n, m in real.items() if n != "gt-oracle"), key=lambda m: -m["overall"])
+        bias = []
+        for subj, var in (("gpt-6-astra", "noastra"), ("claude-opus-5-5-pretrain", "noopus")):
+            if subj in real and "gpt-6.1-sol" in real and real[subj].get("variants") and real["gpt-6.1-sol"].get("variants"):
+                ds = real[subj]["variants"][var]["overall"] - real[subj]["overall"]
+                db = real["gpt-6.1-sol"]["variants"][var]["overall"] - real["gpt-6.1-sol"]["overall"]
+                bias.append(f"{e(real[subj]['display'])} 去掉自己那一票后掉 {-ds:.2f} 分，同一真值下 GPT-6.1-Sol 掉 {-db:.2f} 分（自评偏差约 {db - ds:+.2f}）")
+        real_html += f"""<div class="card" style="margin-top:12px"><h3>怎么读</h3><ul>
+<li>前三名（{e(top[0]['display'])} {top[0]['overall']:.2f}、{e(top[1]['display'])} {top[1]['overall']:.2f}、{e(top[2]['display'])} {top[2]['overall']:.2f}）相差不到 {top[0]['overall'] - top[2]['overall']:.1f} 分；换成留一法真值后顺序会变，应视为并列第一梯队。</li>
+<li>合成集能分出“通用大模型 vs 专用小模型”两个梯队，但梯队内部顺序与真实集不同：真实文档的表格、公式和扫描件更多，Qwen3.8-27B 的公式分（CDM）明显掉队，MinerU2.5-Pro 与 PaddleOCR-VL-1.6 反超它；合成集的排名一致性 ρ 因此只有中等水平。</li>
+<li>自评偏差很小：{"；".join(bias)}。三个 API 大模型在两种“两人真值”下都掉 1~2 分、MinerU 与 PaddleOCR-VL 反而涨分，去掉哪位标注者都一样——推断是两人真值在分歧处取 Gemini 的版本所致，而不是某位标注者偏袒自己。</li></ul></div>"""
         real_html += ("<h3 style='margin-top:14px'>真实集分语言</h3>" + bucket_table(real, "sdd_lang", L, order=lorder) +
+                      "<p class='note'>带 * 的格：该语种的真实页里没有独立公式（或没有表格），三项综合分算不出来，取可用项的平均。</p>" +
                       "<h3 style='margin-top:14px'>真实集分文档类型（文本得分）</h3>" +
                       bucket_table(real, "sdd_doc_type", TYPE_ZH, metric="text", order=list(TYPE_ZH)))
     else:
@@ -431,16 +463,47 @@ def build_production(portal):
 
 
 def build_p2(portal):
-    body = """
+    def load(path):
+        return json.loads(path.read_text()) if path.exists() else None
+    syn = load(D / "bench/runs/bench1980/report.json")
+    real = load(D / "bench/runs/real1591/report.json")
+    prod = (load(D / "portal_src/production.json") or {}).get("run200k") or {}
+    J = load(D / "portal_src/judge_p2.json") or {}
+
+    def ranking(rep):
+        if not rep:
+            return "—"
+        ms = [m for n, m in rep["models"].items() if n != "gt-oracle" and m.get("overall") is not None]
+        return " &gt; ".join(f"{e(m['display'])} {m['overall']:.1f}" for m in sorted(ms, key=lambda m: -m["overall"]))
+    rc = ""
+    if syn and real:
+        r = rank_corr({n: m["overall"] for n, m in syn["models"].items() if n != "gt-oracle"},
+                      {n: m["overall"] for n, m in real["models"].items() if n != "gt-oracle"})
+        if r:
+            rc = f"合成集与真实集排名一致性 Spearman ρ = {r['spearman']:.2f}。"
+    ev = D / "evalset/pages/manifest.jsonl"
+    n_pages = n_docs = full = 0
+    if ev.exists():
+        import collections  # noqa: PLC0415
+        man = [json.loads(x) for x in ev.read_text().splitlines() if x.strip()]
+        cell = collections.defaultdict(set)
+        for m in man:
+            cell[(m["lang"], m["doc_type"])].add(m["doc_id"])
+        n_pages, n_docs, full = len(man), len({m["doc_id"] for m in man}), sum(1 for v in cell.values() if len(v) >= 5)
+    jr = ""
+    if J.get("p2_r2"):
+        b = J["p2_r2"]["by_judge"]
+        jr = f"v7 盲评中评委把合成页误判为真的比例：Sol {b['sol']['fool_rate'] * 100:.0f}%、Opus {b['opus']['fool_rate'] * 100:.0f}%。"
+    body = f"""
 <section><h1>第二阶段总览</h1>
 <p class="sub">在第一阶段（9 类 × 10 语、9000 页）基础上，第二阶段做六件事。每件事一个页面；方案由三位评审模型（GPT-6-Astra、Gemini-4-Argon、Claude Opus 5.5）讨论定稿，主会话实测执行。</p>
 <div class="grid g3">
-<div class="card"><h3><a href="languages.html">1. 语言扩展</a></h3><p>10 → 22 种：加入简繁中文、英文、日韩越泰、土耳其、波斯、意大利、波兰、荷兰；中日泰无空格断行、日文竖排、波斯 RTL 等排版能力。</p></div>
-<div class="card"><h3><a href="datapool.html">2. 数据池</a></h3><p>正文主池换成 FinePDFs 真实 PDF 文本，每语种数十万页，支撑开源库 Top-15 每种 ≥10 万页。</p></div>
-<div class="card"><h3><a href="evalset.html">3. 真实评测集</a></h3><p>每语种 × 每类版面 5 份真实 PDF、10 页，三模型标注，可开源发布（单独 MR）。</p></div>
-<div class="card"><h3><a href="benchmark.html">4. 模型评测</a></h3><p>7 个模型在合成集与真实集上的综合分、分元素、分语言结果。</p></div>
-<div class="card"><h3><a href="production.html">5. 批量生产</a></h3><p>速度、成本实测与优化；Top-20 × 每语种 1 万页压测；LLM 改写模型选型。</p></div>
-<div class="card"><h3>6. 汇总 review</h3><p>本门户即汇总；review 通过后合并 phase2 与 feat/real-evalset 两个 MR。</p></div>
+<div class="card"><h3><a href="languages.html">1. 语言扩展</a></h3><p>10 → 22 种：加入简繁中文、英文、日韩越泰、土耳其、波斯、意大利、波兰、荷兰；中日泰无空格断行、日文竖排、波斯 RTL 等排版能力。{jr}</p></div>
+<div class="card"><h3><a href="datapool.html">2. 数据池</a></h3><p>正文主池换成 FinePDFs 真实 PDF 文本，22 语种入池，支撑开源库 Top-15 每种 ≥10 万页。</p></div>
+<div class="card"><h3><a href="evalset.html">3. 真实评测集</a></h3><p>{n_pages} 页真实 PDF（{n_docs} 份文档），22 语 × 9 类中 {full} 格凑满 5 份；三模型标注 + 共识，A/B 两层许可可开源发布（单独 MR）。</p></div>
+<div class="card"><h3><a href="benchmark.html">4. 模型评测</a></h3><p>合成集（22 语 1980 页）：{ranking(syn)}。<br>真实集：{ranking(real)}。{rc}</p></div>
+<div class="card"><h3><a href="production.html">5. 批量生产</a></h3><p>Top-20 × 每语种 1 万页 = {prod.get('pages', 0):,} 页，4 台 64 核并行（256 路并发）{(prod.get('wall_max') or 0) / 60:.0f} 分钟、0 失败、{prod.get('core_sec_per_page', '—')} 核·秒 / 页；改写模型按任务选（论文 DeepSeek-Flash，试卷与新闻 GPT-6.1-Sol）。</p></div>
+<div class="card"><h3>6. 汇总 review</h3><p>本门户即汇总；review 通过后先合并 phase2，再合并 feat/real-evalset。</p></div>
 </div></section>
 """
     page(portal, "p2.html", "第二阶段总览", body)
