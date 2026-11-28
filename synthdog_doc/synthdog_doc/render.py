@@ -35,6 +35,12 @@ p{margin:0;}
 .u{text-decoration:underline;} .code{font-family:var(--f-mono);}
 .fontwarm{position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;}
 .katex{font-size:1.05em;}
+/* phase 2: space-less scripts. Tokens never break inside (the line breaker may only cut between tokens, which keeps
+   one rectangle per token for the ground truth); CJK uses strict kinsoku and inter-character justification. */
+#page:lang(zh) .w,#page:lang(ja) .w,#page:lang(th) .w{white-space:nowrap;}
+#page:lang(zh),#page:lang(ja){line-break:strict;text-justify:inter-character;font-feature-settings:"palt" 0;}
+#page:lang(ko){word-break:keep-all;}
+#page:lang(th){line-break:auto;}
 """
 
 
@@ -100,8 +106,10 @@ WARM_JS = """async (specs) => {
 class Renderer:
     """One Chromium process; render pages concurrently with an asyncio semaphore."""
 
-    def __init__(self, concurrency=2, tmpdir=None, timeout_ms=90000):
+    def __init__(self, concurrency=2, tmpdir=None, timeout_ms=90000, shot="png"):
         self.concurrency = concurrency
+        self.shot = shot          # png (lossless, default) | jpeg (faster to encode / decode)
+        self.pages = 0
         self.tmpdir = Path(tmpdir or tempfile.mkdtemp(prefix="sdd_r_"))
         self.tmpdir.mkdir(parents=True, exist_ok=True)
         self.timeout_ms = timeout_ms
@@ -134,17 +142,27 @@ class Renderer:
                                                   device_scale_factor=spec.dpr)
             page = await ctx.new_page()
             page.set_default_timeout(self.timeout_ms)
+            tm = {}
             try:
+                t1 = time.time()
                 await page.goto(f"file://{html_path}", wait_until="load")
+                t2 = time.time()
                 font_err = await page.evaluate(WARM_JS, spec.font_warm)
+                t3 = time.time()
                 lay = await page.evaluate("SDD.layout()")
                 await page.evaluate("document.fonts.ready.then(() => 1)")
+                t4 = time.time()
                 gt = await page.evaluate("SDD.extract()")
                 box = await page.evaluate("(() => { const r = document.getElementById('page')"
                                           ".getBoundingClientRect(); return [r.left + window.scrollX, "
                                           "r.top + window.scrollY, r.width, r.height]; })()")
-                png = await page.screenshot(type="png", clip={"x": box[0], "y": box[1], "width": box[2],
-                                                               "height": box[3]})
+                t5 = time.time()
+                png = await page.screenshot(type=self.shot, clip={"x": box[0], "y": box[1], "width": box[2],
+                                                                  "height": box[3]},
+                                            **({"quality": 95} if self.shot == "jpeg" else {}))
+                t6 = time.time()
+                tm = {"open": round(t1 - t0, 3), "goto": round(t2 - t1, 3), "fonts": round(t3 - t2, 3),
+                      "layout": round(t4 - t3, 3), "extract": round(t5 - t4, 3), "screenshot": round(t6 - t5, 3)}
             finally:
                 await ctx.close()
                 if not keep_html:
@@ -155,6 +173,8 @@ class Renderer:
             gt["layout"] = lay
             gt["font_errors"] = font_err
             gt["render_sec"] = round(time.time() - t0, 3)
+            gt["timing"] = tm
+            self.pages += 1
             return png, gt
 
 

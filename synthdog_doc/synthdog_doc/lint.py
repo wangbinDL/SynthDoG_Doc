@@ -165,7 +165,7 @@ def check_page(odb, meta):
         if MARKDOWN.search(outside):
             found["markdown_leak"].append(f"{cat}: {MARKDOWN.search(outside).group(0)!r}")
         # English leaking into a non-English page
-        if cat not in FURNITURE:
+        if cat not in FURNITURE and lang != "en":
             ws = [w.lower() for w in LATIN_WORD.findall(URLISH.sub(" ", outside))]
             stop = sum(w in EN_STOP for w in ws)
             if len(ws) >= 6 and stop >= 3 and stop / len(ws) >= 0.22:

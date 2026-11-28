@@ -1,7 +1,8 @@
-"""Language registry: the Top-10 non-Chinese, non-English languages by total speakers.
+"""Language registry.
 
-Ranking source: Wikipedia "List of languages by total number of speakers" (Ethnologue);
-see docs/languages.md for the table and the ranking rationale.
+Phase 1: the Top-10 non-Chinese, non-English languages by total speakers (Ethnologue, Wikipedia table).
+Phase 2: + Simplified / Traditional Chinese, English, Japanese, Korean, Vietnamese, Thai, Turkish, Persian, Italian,
+Polish and Dutch (selection logic in docs/languages.md).
 """
 from dataclasses import dataclass, field
 
@@ -23,6 +24,12 @@ class Lang:
     pyphen_lang: str = ""
     quotes: tuple = ("“", "”")
     countries: tuple = field(default=())
+    # phase 2
+    segment: str = "space"    # word segmentation: space | cjk (character tokens + kinsoku) | thai (dictionary words)
+    web_dataset: str = "HuggingFaceFW/fineweb-2"
+    zh_script: str = ""       # hans | hant: keep only documents in this Chinese script (FineWeb-2 cmn_Hani mixes both)
+    variants: tuple = ()      # regional variants ((tag, probability), ...), e.g. zh-Hant TW / HK, ko KR / KP
+    zh_name: str = ""         # Chinese display name (portal)
 
 
 LANGS = {
@@ -117,8 +124,124 @@ LANGS = {
                countries=("Germany", "Austria", "Switzerland")),
 }
 
-# Ranking order used everywhere (Ethnologue total speakers, excluding Chinese & English).
+LANGS.update({
+    "zh-Hans": Lang("zh-Hans", "Simplified Chinese", "简体中文", "hans", False, "20231101.zh", "cmn_Hani",
+                    (".cn", ".sg"),
+                    ("people.com.cn", "xinhuanet.com", "news.cn", "chinadaily.com.cn", "gmw.cn", "cctv.com",
+                     "chinanews.com.cn", "chinanews.com", "thepaper.cn", "ifeng.com", "sina.com.cn", "sohu.com",
+                     "163.com", "qq.com", "caixin.com", "bjnews.com.cn", "infzm.com", "yicai.com", "jiemian.com",
+                     "huanqiu.com", "cnr.cn", "ce.cn", "stdaily.com", "workercn.cn", "youth.cn", "eastday.com",
+                     "ynet.com", "dzwww.com", "zaobao.com", "21jingji.com", "eeo.com.cn", "cyol.com"),
+                    quotes=("“", "”"), countries=("China", "Singapore"), segment="cjk", zh_script="hans",
+                    zh_name="简体中文"),
+    "zh-Hant": Lang("zh-Hant", "Traditional Chinese", "繁體中文", "hant", False, "20231101.zh", "cmn_Hani",
+                    (".tw", ".hk", ".mo"),
+                    ("udn.com", "chinatimes.com", "ltn.com.tw", "cna.com.tw", "storm.mg", "ettoday.net", "setn.com",
+                     "tvbs.com.tw", "nownews.com", "rti.org.tw", "pts.org.tw", "mingpao.com", "hk01.com",
+                     "singtao.com", "hket.com", "on.cc", "rthk.hk", "cw.com.tw", "businessweekly.com.tw",
+                     "thenewslens.com", "upmedia.mg", "mirrormedia.mg", "cts.com.tw", "ftvnews.com.tw",
+                     "stheadline.com", "inmediahk.net", "commonhealth.com.tw", "gvm.com.tw", "taiwannews.com.tw"),
+                    quotes=("「", "」"), countries=("Taiwan", "Hong Kong"), segment="cjk", zh_script="hant",
+                    variants=(("TW", 0.7), ("HK", 0.3)), zh_name="繁体中文"),
+    "en": Lang("en", "English", "English", "latin", False, "20231101.en", "sample-10BT",
+               (".uk", ".us", ".au", ".ca", ".nz", ".ie", ".za", ".gov", ".edu"),
+               ("bbc.co.uk", "bbc.com", "theguardian.com", "nytimes.com", "washingtonpost.com", "wsj.com",
+                "reuters.com", "apnews.com", "cnn.com", "npr.org", "latimes.com", "usatoday.com", "independent.co.uk",
+                "telegraph.co.uk", "thetimes.co.uk", "ft.com", "economist.com", "bloomberg.com", "abc.net.au",
+                "smh.com.au", "theage.com.au", "cbc.ca", "theglobeandmail.com", "irishtimes.com", "nzherald.co.nz",
+                "stuff.co.nz", "chicagotribune.com", "bostonglobe.com", "theatlantic.com", "politico.com", "sky.com"),
+               hyphenate=True, pyphen_lang="en_US", quotes=("“", "”"),
+               countries=("United States", "United Kingdom", "Canada", "Australia"),
+               web_dataset="HuggingFaceFW/fineweb", zh_name="英文"),
+    "ja": Lang("ja", "Japanese", "日本語", "japanese", False, "20231101.ja", "jpn_Jpan",
+               (".jp",),
+               ("asahi.com", "yomiuri.co.jp", "mainichi.jp", "nikkei.com", "sankei.com", "nhk.or.jp", "jiji.com",
+                "kyodo.co.jp", "tokyo-np.co.jp", "chunichi.co.jp", "nishinippon.co.jp", "hokkaido-np.co.jp",
+                "kahoku.news", "kobe-np.co.jp", "sponichi.co.jp", "nikkansports.com", "sanspo.com", "toyokeizai.net",
+                "diamond.jp", "president.jp", "itmedia.co.jp", "impress.co.jp", "j-cast.com", "bunshun.jp",
+                "news.yahoo.co.jp", "fnn.jp", "tbs.co.jp", "tv-asahi.co.jp", "ntv.co.jp", "shizushin.com"),
+               quotes=("「", "」"), countries=("Japan",), segment="cjk", zh_name="日文"),
+    "ko": Lang("ko", "Korean", "한국어", "hangul", False, "20231101.ko", "kor_Hang",
+               (".kr",),
+               ("chosun.com", "joongang.co.kr", "donga.com", "hani.co.kr", "khan.co.kr", "yna.co.kr", "hankyung.com",
+                "mk.co.kr", "kmib.co.kr", "seoul.co.kr", "segye.com", "munhwa.com", "hankookilbo.com", "sedaily.com",
+                "mt.co.kr", "edaily.co.kr", "newsis.com", "news1.kr", "ohmynews.com", "pressian.com", "kbs.co.kr",
+                "imbc.com", "sbs.co.kr", "ytn.co.kr", "jtbc.co.kr", "nocutnews.co.kr", "etnews.com", "zdnet.co.kr",
+                "heraldcorp.com", "asiae.co.kr"),
+               quotes=("“", "”"), countries=("South Korea",), variants=(("KR", 0.95), ("KP", 0.05)),
+               zh_name="韩文"),
+    "vi": Lang("vi", "Vietnamese", "Tiếng Việt", "vietnamese", False, "20231101.vi", "vie_Latn",
+               (".vn",),
+               ("vnexpress.net", "tuoitre.vn", "thanhnien.vn", "dantri.com.vn", "vietnamnet.vn", "nhandan.vn",
+                "laodong.vn", "tienphong.vn", "vov.vn", "vtv.vn", "zingnews.vn", "znews.vn", "24h.com.vn",
+                "kenh14.vn", "cafef.vn", "cafebiz.vn", "vietnamplus.vn", "baochinhphu.vn", "qdnd.vn", "cand.com.vn",
+                "plo.vn", "nld.com.vn", "sggp.org.vn", "baomoi.com", "soha.vn", "vneconomy.vn", "genk.vn"),
+               quotes=("“", "”"), countries=("Vietnam",), zh_name="越南文"),
+    "th": Lang("th", "Thai", "ไทย", "thai", False, "20231101.th", "tha_Thai",
+               (".th",),
+               ("thairath.co.th", "matichon.co.th", "khaosod.co.th", "dailynews.co.th", "bangkokbiznews.com",
+                "prachachat.net", "posttoday.com", "thansettakij.com", "mgronline.com", "naewna.com", "sanook.com",
+                "kapook.com", "pptvhd36.com", "thaipbs.or.th", "ch3plus.com", "ch7.com", "amarintv.com",
+                "tnnthailand.com", "springnews.co.th", "workpointtoday.com", "thestandard.co", "thaipost.net",
+                "siamrath.co.th", "komchadluek.net", "nationtv.tv", "voathai.com"),
+               native_digits="๐๑๒๓๔๕๖๗๘๙", native_digit_prob=0.12,
+               quotes=("“", "”"), countries=("Thailand",), segment="thai", zh_name="泰文"),
+    "tr": Lang("tr", "Turkish", "Türkçe", "latin", False, "20231101.tr", "tur_Latn",
+               (".tr",),
+               ("hurriyet.com.tr", "milliyet.com.tr", "sabah.com.tr", "sozcu.com.tr", "cumhuriyet.com.tr",
+                "haberturk.com", "ntv.com.tr", "cnnturk.com", "trthaber.com", "aa.com.tr", "star.com.tr",
+                "yenisafak.com", "haber7.com", "ensonhaber.com", "takvim.com.tr", "posta.com.tr", "karar.com",
+                "t24.com.tr", "bianet.org", "dunya.com", "ekonomim.com", "gazeteduvar.com.tr", "birgun.net",
+                "evrensel.net", "mynet.com", "internethaber.com", "ahaber.com.tr"),
+               quotes=("“", "”"), countries=("Türkiye",), zh_name="土耳其文"),
+    "fa": Lang("fa", "Persian", "فارسی", "persian", True, "20231101.fa", "fas_Arab",
+               (".ir", ".af"),
+               ("hamshahrionline.ir", "irna.ir", "isna.ir", "farsnews.ir", "tasnimnews.com", "mehrnews.com",
+                "khabaronline.ir", "entekhab.ir", "tabnak.ir", "asriran.com", "donya-e-eqtesad.com",
+                "etemadonline.com", "shargdaily.com", "iribnews.ir", "yjc.ir", "mashreghnews.ir", "eghtesadonline.com",
+                "ecoiran.com", "radiofarda.com", "iranintl.com", "independentpersian.com", "zoomit.ir", "digiato.com",
+                "ilna.ir", "aftabnews.ir", "bbc.com", "dw.com"),
+               native_digits="۰۱۲۳۴۵۶۷۸۹", native_digit_prob=0.85,
+               quotes=("«", "»"), countries=("Iran", "Afghanistan"), zh_name="波斯文"),
+    "it": Lang("it", "Italian", "Italiano", "latin", False, "20231101.it", "ita_Latn",
+               (".it", ".ch", ".sm"),
+               ("corriere.it", "repubblica.it", "lastampa.it", "ilsole24ore.com", "ilmessaggero.it", "ilgiornale.it",
+                "ilfattoquotidiano.it", "ansa.it", "rainews.it", "tgcom24.mediaset.it", "avvenire.it", "ilpost.it",
+                "ilsecoloxix.it", "gazzetta.it", "liberoquotidiano.it", "ilmattino.it", "lanazione.it",
+                "ilrestodelcarlino.it", "ilgazzettino.it", "unionesarda.it", "quotidiano.net", "open.online",
+                "today.it", "fanpage.it", "agi.it", "adnkronos.com", "rsi.ch", "swissinfo.ch"),
+               hyphenate=True, pyphen_lang="it_IT", quotes=("«", "»"), countries=("Italy", "Switzerland"),
+               zh_name="意大利文"),
+    "pl": Lang("pl", "Polish", "Polski", "latin", False, "20231101.pl", "pol_Latn",
+               (".pl",),
+               ("gazeta.pl", "wyborcza.pl", "rp.pl", "onet.pl", "wp.pl", "interia.pl", "tvn24.pl", "polsatnews.pl",
+                "money.pl", "bankier.pl", "businessinsider.com.pl", "newsweek.pl", "polityka.pl", "wprost.pl",
+                "dziennik.pl", "gazetaprawna.pl", "se.pl", "fakt.pl", "natemat.pl", "pap.pl", "tvp.info",
+                "polskieradio.pl", "rmf24.pl", "radiozet.pl", "dorzeczy.pl", "wnp.pl"),
+               hyphenate=True, pyphen_lang="pl_PL", quotes=("„", "”"), countries=("Poland",), zh_name="波兰文"),
+    "nl": Lang("nl", "Dutch", "Nederlands", "latin", False, "20231101.nl", "nld_Latn",
+               (".nl", ".be", ".sr"),
+               ("nos.nl", "nu.nl", "volkskrant.nl", "nrc.nl", "telegraaf.nl", "trouw.nl", "ad.nl", "parool.nl",
+                "fd.nl", "rtlnieuws.nl", "nieuwsblad.be", "standaard.be", "hln.be", "demorgen.be", "vrt.be",
+                "tijd.be", "gva.be", "hbvl.be", "omroepbrabant.nl", "dvhn.nl", "lc.nl", "tubantia.nl",
+                "bndestem.nl", "pzc.nl", "ed.nl", "limburger.nl", "noordhollandsdagblad.nl"),
+               hyphenate=True, pyphen_lang="nl_NL", quotes=("‘", "’"), countries=("Netherlands", "Belgium"),
+               zh_name="荷兰文"),
+})
+
+_ZH = {"hi": "印地文", "es": "西班牙文", "ar": "阿拉伯文", "fr": "法文", "bn": "孟加拉文", "pt": "葡萄牙文",
+       "id": "印尼文", "ur": "乌尔都文", "ru": "俄文", "de": "德文"}
+for _c, _n in _ZH.items():
+    object.__setattr__(LANGS[_c], "zh_name", _n)
+
+# Phase-1 ranking order (Ethnologue total speakers, excluding Chinese & English) -- the default language set.
 LANG_ORDER = ["hi", "es", "ar", "fr", "bn", "pt", "id", "ur", "ru", "de"]
+# Phase-2 additions, in production priority order (CCG round 2, docs/ccg_phase2_synthesis.md).
+LANG_ORDER_P2 = ["en", "zh-Hans", "ja", "vi", "ko", "zh-Hant", "tr", "fa", "th", "it", "pl", "nl"]
+ALL_LANGS = LANG_ORDER + LANG_ORDER_P2
+# Top-15 (>= 100k pages each for the open library) and Top-20 (production stress test).
+TOP15 = ["en", "zh-Hans", "hi", "es", "ar", "fr", "bn", "pt", "id", "ur", "ru", "de", "ja", "vi", "ko"]
+TOP20 = TOP15 + ["zh-Hant", "tr", "fa", "th", "it"]
 
 
 def get(code: str) -> Lang:

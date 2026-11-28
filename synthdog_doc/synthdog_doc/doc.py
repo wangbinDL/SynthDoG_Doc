@@ -17,7 +17,16 @@ TYPO = {
     "bengali": dict(lh=1.32, size=1.1, ls_ok=False, italic=False, hyph=False, justify=0.55, caps=False),
     "arabic": dict(lh=1.38, size=1.12, ls_ok=False, italic=False, hyph=False, justify=0.75, caps=False),
     "nastaliq": dict(lh=1.78, size=1.16, ls_ok=False, italic=False, hyph=False, justify=0.35, caps=False),
+    # phase 2
+    "persian": dict(lh=1.38, size=1.12, ls_ok=False, italic=False, hyph=False, justify=0.8, caps=False),
+    "hans": dict(lh=1.28, size=0.96, ls_ok=False, italic=False, hyph=False, justify=0.97, caps=False),
+    "hant": dict(lh=1.3, size=0.96, ls_ok=False, italic=False, hyph=False, justify=0.97, caps=False),
+    "japanese": dict(lh=1.3, size=0.96, ls_ok=False, italic=False, hyph=False, justify=0.97, caps=False),
+    "hangul": dict(lh=1.24, size=0.98, ls_ok=False, italic=False, hyph=False, justify=0.85, caps=False),
+    "thai": dict(lh=1.42, size=1.12, ls_ok=False, italic=False, hyph=False, justify=0.25, caps=False),
 }
+# Latin-script languages with stacked diacritics need a little more leading.
+LH_LANG = {"vi": 1.1}
 
 # Probability that a document of this type uses native digits (where the script has them).
 NATIVE_DIGIT_P = {
@@ -25,6 +34,9 @@ NATIVE_DIGIT_P = {
     "hi": {"default": 0.25, "paper": 0.08, "report": 0.08, "ppt": 0.12, "exam": 0.3, "textbook": 0.35},
     "ar": {"default": 0.5, "paper": 0.35, "report": 0.4, "ppt": 0.45},
     "ur": {"default": 0.4, "paper": 0.25, "report": 0.25, "newspaper": 0.55, "exam": 0.45},
+    # phase 2: Iranian print overwhelmingly uses Persian digits; Thai digits appear mainly in official / school papers
+    "fa": {"default": 0.85, "paper": 0.7, "report": 0.6, "ppt": 0.6},
+    "th": {"default": 0.08, "exam": 0.15, "newspaper": 0.12},
 }
 
 
@@ -75,7 +87,11 @@ class Doc:
         return f"\u2066{s}\u2069" if self.rtl else s
 
     def upper(self, s):
-        return s.upper() if self.typo["caps"] else s
+        if not self.typo["caps"]:
+            return s
+        if self.lang == "tr":                 # Turkish dotted / dotless i: i -> İ, ı -> I (str.upper gets this wrong)
+            s = s.replace("i", "İ").replace("ı", "I")
+        return s.upper()
 
     def body_font(self, role="serif"):
         if self.nastaliq and role in ("serif", "sans"):
@@ -95,7 +111,7 @@ class Doc:
         return size_pt * PT * self.typo["size"]
 
     def lh(self, base):
-        return round(base * self.typo["lh"], 3)
+        return round(base * self.typo["lh"] * LH_LANG.get(self.lang, 1.0), 3)
 
     def ls(self, em):
         return f"{em}em" if self.typo["ls_ok"] else "0"
@@ -108,8 +124,13 @@ class Doc:
 
     def warm_specs(self):
         specs = []
-        sample = {"latin": "Aa Ññ Éé ß 0123", "cyrillic": "Аа Бб Жж 0123", "devanagari": "कखग क्ष १२३ Aa",
-                  "bengali": "কখগ ক্ষ ১২৩ Aa", "arabic": "ابت ٹ ۔ ١٢٣ Aa", "urdu": "ابت ٹ ۔ ۱۲۳ Aa"}[self.fonts.script]
+        sample = {"latin": "Aa Ññ Éé ß ăơư ğış ąłż 0123", "cyrillic": "Аа Бб Жж 0123", "devanagari": "कखग क्ष १२३ Aa",
+                  "bengali": "কখগ ক্ষ ১২৩ Aa", "arabic": "ابت ٹ ۔ ١٢٣ Aa", "urdu": "ابت ٹ ۔ ۱۲۳ Aa",
+                  "persian": "پچژگکی ۱۲۳ Aa", "hans": "汉字简体，。中文 Aa1", "hant": "漢字繁體，。「」 Aa1",
+                  "japanese": "日本語かなカナ。「」 Aa1", "hangul": "한국어 가나다 Aa1",
+                  "thai": "ภาษาไทย กขค ๑๒๓ Aa"}[self.fonts.script]
+        if self.fonts.fallback:
+            specs.append([f"normal 400 16px '{self.fonts.fallback}'", sample])
         for role, fam in list(self.fonts.fams.items()) + [(r, f) for r, f in self.fonts.latin.items()]:
             for wt in (400, 700):
                 for st in ("normal", "italic"):
