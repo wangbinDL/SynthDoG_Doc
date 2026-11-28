@@ -41,19 +41,28 @@ _GREEK_BARE = re.compile(r"^(?:alpha|beta|gamma|delta|epsilon|varepsilon|zeta|et
 
 # Document-level digit policy, set by Doc for the page being built: "native" | "latin" | None (leave as is).
 DOC = {"digits": None, "lang": None}
-_NATIVE_SETS = ["०१२३४५६७८९", "০১২৩৪৫৬৭৮৯", "٠١٢٣٤٥٦٧٨٩", "۰۱۲۳۴۵۶۷۸۹"]
+_NATIVE_SETS = ["०१२३४५६७८९", "০১২৩৪৫৬৭৮৯", "٠١٢٣٤٥٦٧٨٩", "۰۱۲۳۴۵۶۷۸۹", "๐๑๒๓๔๕๖๗๘๙"]
 _TO_LATIN = {ch: str(i) for ds in _NATIVE_SETS for i, ch in enumerate(ds)}
 SCRIPT_RANGES = {
-    "latin": [(0x0041, 0x024F), (0x1E00, 0x1EFF)],
+    "latin": [(0x0041, 0x024F), (0x1E00, 0x1EFF), (0xFF21, 0xFF5A)],
     "greek": [(0x0370, 0x03FF)],
     "cyrillic": [(0x0400, 0x04FF)],
     "devanagari": [(0x0900, 0x097F), (0xA8E0, 0xA8FF)],
     "bengali": [(0x0980, 0x09FF)],
     "arabic": [(0x0600, 0x06FF), (0x0750, 0x077F), (0x08A0, 0x08FF), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF)],
+    "han": [(0x4E00, 0x9FFF), (0x3400, 0x4DBF), (0xF900, 0xFAFF), (0x3005, 0x3007), (0x20000, 0x2EBEF),
+            (0x2F800, 0x2FA1F)],
+    "kana": [(0x3040, 0x309F), (0x30A0, 0x30FF), (0x31F0, 0x31FF), (0xFF66, 0xFF9F)],
+    "hangul": [(0xAC00, 0xD7AF), (0x1100, 0x11FF), (0x3130, 0x318F), (0xA960, 0xA97F), (0xD7B0, 0xD7FF)],
+    "thai": [(0x0E00, 0x0E7F)],
+    "hebrew": [(0x0590, 0x05FF), (0xFB1D, 0xFB4F)],
 }
 _ALLOWED = {"latin": ("latin", "greek"), "cyrillic": ("cyrillic", "latin", "greek"),
             "devanagari": ("devanagari", "latin", "greek"), "bengali": ("bengali", "latin", "greek"),
-            "arabic": ("arabic", "latin", "greek")}
+            "arabic": ("arabic", "latin", "greek"), "persian": ("arabic", "latin", "greek"),
+            "hans": ("han", "latin", "greek"), "hant": ("han", "latin", "greek"),
+            "japanese": ("han", "kana", "latin", "greek"), "hangul": ("hangul", "han", "latin", "greek"),
+            "thai": ("thai", "latin", "greek"), "vietnamese": ("latin", "greek"), "hebrew": ("hebrew", "latin", "greek")}
 
 
 def _script_of_char(c):
@@ -143,6 +152,7 @@ def fix_math_delims(text):
 
 
 def esc(s):
+    s = str(s).replace("\uE000", "$")
     return html.escape(str(s), quote=True)
 
 
@@ -156,7 +166,12 @@ _OWN_STOP = {"de": set("der die das und ist nicht mit von zu den des ein eine si
              "fr": set("le la les et est des une pour dans que qui sur pas du au avec par".split()),
              "es": set("el la los las y es de que en un una por con para del se no".split()),
              "pt": set("o a os as e é de que em um uma para com do da não se por".split()),
-             "id": set("yang dan di ini itu dengan untuk dari tidak ke pada dalam akan adalah".split())}
+             "id": set("yang dan di ini itu dengan untuk dari tidak ke pada dalam akan adalah".split()),
+             "it": set("il la di e che per un una non con del della sono gli le si come".split()),
+             "pl": set("i w na nie z do to jest się że jak o po przez od".split()),
+             "nl": set("de het een en van in is dat op te met voor niet zijn die".split()),
+             "tr": set("ve bir bu da de için ile olarak çok daha gibi olan ama ne var".split()),
+             "vi": set("và của là có trong các được cho với những không một này người đã".split())}
 
 
 def strip_emoji(s):
@@ -257,6 +272,20 @@ def fix_punct(s, lang):
     elif lang == "ar":
         s = re.sub(r"(?<=[؀-ۿ]),", "،", s)
         s = re.sub(r"(?<=[؀-ۿ])\?", "؟", s)
+    elif lang == "fa":
+        s = s.replace("ي", "ی").replace("ك", "ک")      # Persian yeh / keheh, not the Arabic letters
+        s = re.sub(r"(?<=[؀-ۿ]),", "،", s)
+        s = re.sub(r"(?<=[؀-ۿ])\?", "؟", s)
+        s = re.sub(r"(?<=[؀-ۿ]);", "؛", s)
+    elif lang in ("zh-Hans", "zh-Hant", "ja"):
+        cjk = r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]"
+        s = re.sub(rf"(?<={cjk}) +(?={cjk})", "", s)                 # stray spaces between CJK characters
+        full = {",": "、" if lang == "ja" else "，", "?": "？", "!": "！", ":": "：", ";": "；", "(": "（", ")": "）"}
+        s = re.sub(rf"(?<={cjk})([,?!:;)])", lambda m: full[m.group(1)], s)
+        s = re.sub(rf"\((?={cjk})", "（", s)
+        s = re.sub(rf"(?<={cjk})\.(?=\s|$)", "。", s)
+        if lang in ("zh-Hant", "ja"):
+            s = s.replace("“", "「").replace("”", "」").replace("‘", "『").replace("’", "』")
     return s
 
 
@@ -265,6 +294,57 @@ def normalize(s):
     s = s.replace("​", "")
     s = re.sub(r"[ \t\r\f\v]+", " ", s)
     return s.strip()
+
+
+_CJK_CHAR = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3005-\u3007"
+                       r"\uff66-\uff9f\U00020000-\U0002ebef]")
+# kinsoku: never at the start of a line (closing punctuation, small kana, prolonged sound mark) ...
+_NO_START = set("、。，．・：；？！ー゛゜ヽヾゝゞ々〻）〕］｝〉》」』】〙〗〟’”｠»ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ"
+                "ㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ‥…%％),.:;!?]}")
+# ... and never at the end of one (opening punctuation)
+_NO_END = set("（〔［｛〈《「『【〘〖〝‘“｟«([{")
+
+
+def cjk_tokens(s):
+    """Split CJK text into line-breakable tokens: one per ideograph / kana, Latin & digit runs kept whole,
+    closing punctuation glued to the previous token and opening punctuation to the next (kinsoku shori)."""
+    raw, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if _CJK_CHAR.match(c) or c in _NO_START or c in _NO_END:
+            raw.append(c)
+            i += 1
+            continue
+        j = i
+        while j < n and not _CJK_CHAR.match(s[j]) and s[j] not in _NO_END and \
+                not (s[j] in _NO_START and not s[j].isascii()):
+            j += 1
+        raw.append(s[i:j])
+        i = j
+    out = []
+    for t in raw:
+        if out and (t[0] in _NO_START or out[-1][-1] in _NO_END):
+            out[-1] += t
+        else:
+            out.append(t)
+    return out
+
+
+# CJK running text glues LaTeX-ish variables to ideographs ("其中c_i为第i个命题，p_{ij}^{(k)}为…"); without spaces the
+# per-word math detection never sees them, so wrap such runs in $...$ first.
+_CJK_MATH = re.compile(r"(?<![A-Za-z0-9$\\{}])((?:\\[A-Za-z]+|[A-Za-zα-ωΑ-Ω])(?:[_^](?:\{[^{}$]{1,40}\}|[A-Za-z0-9]))+)"
+                       r"(?![A-Za-z0-9}])")
+
+
+def cjk_math_wrap(text):
+    parts = _LATEX_INLINE.split(text) if "$" in text else [text]
+    return "".join(p if (p.startswith("$") and p.endswith("$") and len(p) > 2) else _CJK_MATH.sub(r"$\1$", p)
+                   for p in parts)
+
+
+def _segment_of(lang):
+    lang = lang or DOC.get("lang")
+    return LANGS[lang].segment if lang in LANGS else "space"
 
 
 def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls=""):
@@ -279,8 +359,14 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
         text = to_native_digits(text, lang)
     script = DOC.get("script")
     out = []
+    if "$" in text:                          # "$1,800 from $2,000" is money, not inline LaTeX
+        text = re.sub(r"\$(?=\d[\d.,]*(?:\s|$|[^\d$]))(?![^$]*[\\^_{}])", "\uE000", text)
+    if _segment_of(lang) == "cjk" and re.search(r"[_^]", text):
+        text = cjk_math_wrap(text)
+    short_cjk = len(text.strip()) <= 40
     parts = _LATEX_INLINE.split(text) if "$" in text else [text]
-    for part in parts:
+    last_part = max((i for i, pt in enumerate(parts) if pt and not pt.startswith("$")), default=-1)
+    for pi, part in enumerate(parts):
         if not part:
             continue
         if part.startswith("$") and part.endswith("$") and len(part) > 2:
@@ -289,7 +375,9 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
             else:
                 out.append(f'<span class="m" data-latex="{esc(sanitize_latex(part[1:-1]))}"></span> ')
             continue
-        for m in _WORD_RE.finditer(part):
+        wmatches = list(_WORD_RE.finditer(part))
+        for wi, m in enumerate(wmatches):
+            last_word = pi == last_part and wi == len(wmatches) - 1
             tok = m.group(0)
             word = strip_emoji(tok.rstrip())
             space = tok[len(word):] if word else ""
@@ -331,6 +419,22 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
             if hyph and lang:
                 word = hyphenate_word(word, lang)
             c = cls + (" " + extra_cls if extra_cls else "")
+            seg = _segment_of(lang)
+            if seg == "cjk" and _CJK_CHAR.search(word):
+                if short_cjk:
+                    # titles, captions, slide cards: break only between words (engine.js segments with ICU)
+                    out.append(f'<span class="{c} seg">{esc(word)}{" " if space else ""}</span>')
+                    continue
+                toks = cjk_tokens(word)
+                if last_word and len(toks) >= 3 and len(toks[-1]) <= 2 and len(toks[-2]) <= 2:
+                    toks[-2:] = [toks[-2] + toks[-1]]      # no single-character last line (widow control)
+                for k, t in enumerate(toks):
+                    out.append(f'<span class="{c}">{esc(t)}{" " if space and k == len(toks) - 1 else ""}</span>')
+                continue
+            if seg == "thai" and re.search(r"[\u0e00-\u0e7f]", word):
+                # split into dictionary words in the page by Intl.Segmenter (engine.js SDD.segmentThai)
+                out.append(f'<span class="{c} seg">{esc(word)}{" " if space else ""}</span>')
+                continue
             out.append(f'<span class="{c}">{esc(word)}{" " if space else ""}</span>')
     return "".join(out)
 
@@ -344,23 +448,28 @@ def rich_html(segments, lang=None, hyph=False):
 
 
 def truncate_words(text, n):
+    if _CJK_CHAR.search(text) and len(text.split()) < n / 4:
+        return text[:int(n * 1.6)]           # ~1.6 CJK characters per word-equivalent
+    if re.search(r"[\u0e00-\u0e7f]", text) and len(text.split()) < n / 4:
+        return text[:int(n * 5.5)]           # Thai: spaces separate phrases, not words
     ws = text.split()
     return " ".join(ws[:n])
 
 
 def sentences(text, lang):
     """Rough sentence split preserving the terminal punctuation."""
-    pat = r"(?<=[.!?।۔؟])\s+"
-    return [s for s in re.split(pat, text) if s.strip()]
+    pat = r"(?<=[.!?।۔؟])\s+|(?<=[。！？])"
+    return [s for s in re.split(pat, text) if s and s.strip()]
 
 
 def title_case_ok(lang):
-    return lang in ("es", "fr", "pt", "id", "de", "ru")
+    return lang in ("es", "fr", "pt", "id", "de", "ru", "en")
 
 
 # ----------------------------------------------------------------------------- locale number formatting
-DEC_COMMA = {"de", "es", "pt", "id", "fr", "ru"}
-THOUSANDS = {"de": ".", "es": ".", "pt": ".", "id": ".", "fr": "\u202f", "ru": "\u202f"}
+DEC_COMMA = {"de", "es", "pt", "id", "fr", "ru", "it", "pl", "nl", "tr", "vi"}
+THOUSANDS = {"de": ".", "es": ".", "pt": ".", "id": ".", "fr": "\u202f", "ru": "\u202f", "it": ".", "pl": "\u00a0",
+             "nl": ".", "tr": ".", "vi": "."}
 
 
 def fmt_num(x, lang, decimals=None, pct=False):
@@ -384,8 +493,15 @@ def fmt_num(x, lang, decimals=None, pct=False):
         if head:
             groups.insert(0, head)
         s = ",".join(groups + [tail]) + ("." + fp if fp else "")
+    if lang == "fa":                         # Persian decimal / thousands separators
+        s = s.replace(",", "\x00").replace(".", "٫").replace("\x00", "٬")
     if v < 0:
         s = "−" + s
     if pct:
-        s = s + ("\u202f%" if lang in ("fr", "de", "ru") else "%")
+        if lang == "tr":                     # Turkish writes the percent sign first: %25
+            s = "%" + s
+        elif lang == "fa":
+            s = s + "٪"
+        else:
+            s = s + ("\u202f%" if lang in ("fr", "de", "ru") else "%")
     return s

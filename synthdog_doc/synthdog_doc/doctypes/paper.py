@@ -7,7 +7,7 @@ from .. import corpus as C
 from ..charts import Chart, random_series
 from ..doc import Doc
 from ..geometry import IN, PT
-from ..textkit import esc, words_html
+from ..textkit import truncate_words, esc, words_html
 
 PROFILES = {
     # name: weights per layout (single, double)
@@ -221,6 +221,19 @@ class PaperPage(Doc):
         latex = e.get("latex") if isinstance(e, dict) else str(e)
         return B.equation(latex.strip().strip("$"), f"({self.num(num)})", lang=self.lang)
 
+    def vol_issue(self, vol, issue, cm=", "):
+        """Volume / issue label in the local journal convention."""
+        v, n = self.num(vol), self.num(issue)
+        if self.lang == "ja":
+            return f"第{v}巻 第{n}号"
+        if self.lang == "zh-Hans":
+            return f"第{v}卷 第{n}期"
+        if self.lang == "zh-Hant":
+            return f"第{v}卷 第{n}期"
+        if self.lang == "ko":
+            return f"제{v}권 제{n}호"
+        return f"{C.L(self.lang, 'Vol.', grp='paper')} {v}{cm}{C.L(self.lang, 'No.', grp='paper')} {n}"
+
     def build_flow(self, start_frac, col_w):
         seq = self._blocks_from_pack()
         n = len(seq)
@@ -306,10 +319,9 @@ class PaperPage(Doc):
         parts = []
         # ---- running header / footer
         head_h = body_px * 2.2
-        cm = "، " if self.lang in ("ar", "ur") else ", "
-        hdr_txt_l = f"{journal}{cm}{C.L(self.lang, 'Vol.', grp='paper')} {self.num(vol)}{cm}" \
-                    f"{C.L(self.lang, 'No.', grp='paper')} {self.num(issue)} ({self.num(year)})"
-        short_title = " ".join(pk.get("title", "").split()[:8])
+        cm = "، " if self.lang in ("ar", "ur", "fa") else ", "
+        hdr_txt_l = f"{journal}{cm}{self.vol_issue(vol, issue, cm)} ({self.num(year)})"
+        short_title = truncate_words(pk.get("title", ""), 8)
         hdr_right = short_title if r.random() < 0.6 else (pk.get("authors") or ["X"])[0] + " " + \
             C.L(self.lang, "et al.", grp="paper")
         show_header = self.prof not in ("arxiv_preprint", "manuscript") and \
@@ -352,8 +364,7 @@ class PaperPage(Doc):
                 oa = r.random() < 0.5
                 ban = (f'<div class="jban" style="border-color:{s["accent"]}">'
                        + B.span_text(journal, self.lang, "header", cls="jban-t", style=f"color:{s['accent']}")
-                       + B.span_text(f"{issn} · {C.L(self.lang, 'Vol.', grp='paper')} {self.num(vol)}, "
-                                     f"{C.L(self.lang, 'No.', grp='paper')} {self.num(issue)} · {self.num(year)}",
+                       + B.span_text(f"{issn} · {self.vol_issue(vol, issue, ', ')} · {self.num(year)}",
                                      self.lang, "header", cls="jban-m")
                        + (f'<span class="oa" data-cat="abandon" data-bid="{B.bid("oa")}">Open Access</span>' if oa else "")
                        + '</div>')
@@ -414,6 +425,9 @@ class PaperPage(Doc):
             flow = self.build_flow(0.0, col_w)
             # corresponding-author footnote as bottom float in first column
             em = (x.get("emails") or [""])[0] or f"{(pk.get('authors') or ['a'])[0].split()[-1].lower()}@univ.edu"
+            if not em.split("@")[0].isascii():   # CJK / Thai names: e-mail local parts are ASCII in print
+                em = f"{r.choice(['corr', 'contact', 'office', 'lab', 'research'])}{r.randint(1, 99)}@" + \
+                     (em.split("@")[1] if "@" in em and em.split("@")[1].isascii() else "univ.edu")
             mail = f"{C.L(self.lang, 'Corresponding author', grp='paper')}: {(pk.get('authors') or ['A'])[0]}, " \
                    f"{C.L(self.lang, 'E-mail', grp='paper')}: {em}"
             flow.insert(0, f'<div class="fnote" data-place="bottom" data-col="0">' +

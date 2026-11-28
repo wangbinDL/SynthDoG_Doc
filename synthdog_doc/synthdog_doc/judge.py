@@ -98,7 +98,13 @@ Return ONLY JSON:
 SCRIPT_NAME = {"hi": "Devanagari", "bn": "Bengali", "ar": "Arabic (Naskh/Kufi)", "ur": "Urdu Perso-Arabic (Nastaliq/Naskh)",
                "ru": "Cyrillic", "es": "Latin", "fr": "Latin", "pt": "Latin", "id": "Latin", "de": "Latin"}
 LNAME = {"hi": "Hindi", "bn": "Bengali", "ar": "Arabic", "ur": "Urdu", "ru": "Russian", "es": "Spanish", "fr": "French",
-         "pt": "Portuguese", "id": "Indonesian", "de": "German", "en": "English", "zh": "Chinese", "mixed": "various"}
+         "pt": "Portuguese", "id": "Indonesian", "de": "German", "en": "English", "zh": "Chinese", "mixed": "various",
+         "zh-Hans": "Simplified Chinese", "zh-Hant": "Traditional Chinese (Taiwan / Hong Kong)", "ja": "Japanese",
+         "ko": "Korean", "vi": "Vietnamese", "th": "Thai", "tr": "Turkish", "fa": "Persian", "it": "Italian",
+         "pl": "Polish", "nl": "Dutch"}
+SCRIPT_NAME.update({"en": "Latin", "zh-Hans": "Simplified Han", "zh-Hant": "Traditional Han", "ja": "Kanji + Kana",
+                    "ko": "Hangul", "vi": "Latin with Vietnamese diacritics", "th": "Thai", "tr": "Latin",
+                    "fa": "Perso-Arabic (Naskh)", "it": "Latin", "pl": "Latin", "nl": "Latin"})
 GENRE = {"ppt": "presentation slide", "exam": "exam / test paper", "paper_single": "single-column academic paper page",
          "paper_double": "double-column academic paper page", "newspaper": "newspaper page", "magazine": "magazine page",
          "book": "book page", "textbook": "colorful school textbook page", "report": "financial / equity research report page"}

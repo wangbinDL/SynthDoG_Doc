@@ -84,6 +84,74 @@ POOLS = {
     },
 }
 
+POOLS.update({
+    # ---- phase 2. Han-unified scripts get language-specific faces (SC / TC-HK / JP / KR glyph standards).
+    "hans": {
+        "serif": {"Noto Serif SC": 5},
+        "sans": {"Noto Sans SC": 5},
+        "display": {"Noto Serif SC": 3, "Noto Sans SC": 3, "ZCOOL QingKe HuangYou": 2, "站酷小薇体": 2,
+                    "ZCOOL KuaiLe": 1, "Ma Shan Zheng": 1},
+        "kai": {"LXGW WenKai TC": 3},
+        "mono": {},
+        "hand": {"Long Cang": 2, "Zhi Mang Xing": 1, "Liu Jian Mao Cao": 1, "Ma Shan Zheng": 1},
+    },
+    "hant": {
+        "serif": {"Noto Serif TC": 4, "Noto Serif HK": 2, "Cactus Classical Serif": 2, "Chiron Sung HK": 2},
+        "sans": {"Noto Sans TC": 4, "Noto Sans HK": 2, "Chiron Hei HK": 3},
+        "display": {"Noto Serif TC": 2, "Noto Sans TC": 2, "Chiron Hei HK": 2, "Chiron Sung HK": 1, "Iansui": 1},
+        "kai": {"LXGW WenKai TC": 3},
+        "mono": {},
+        "hand": {"Iansui": 2, "LXGW WenKai TC": 1},
+    },
+    "japanese": {
+        "serif": {"Noto Serif JP": 4, "Shippori Mincho": 3, "Zen Old Mincho": 2, "BIZ UDPMincho": 3,
+                  "Sawarabi Mincho": 2, "Hina Mincho": 1, "Kaisei Opti": 1},
+        "sans": {"Noto Sans JP": 4, "BIZ UDPGothic": 3, "Zen Kaku Gothic New": 3, "M PLUS 1p": 2,
+                 "Sawarabi Gothic": 2, "Murecho": 1},
+        "display": {"Zen Maru Gothic": 2, "Rounded Mplus 1c": 2, "Kiwi Maru": 1, "DotGothic16": 1,
+                    "Shippori Mincho": 2, "Noto Serif JP": 2, "Noto Sans JP": 2},
+        "mono": {},
+        "hand": {"Yuji Syuku": 1, "Kiwi Maru": 1},
+    },
+    "hangul": {
+        "serif": {"Noto Serif KR": 4, "NanumMyeongjo": 4, "Gowun Batang": 3, "Song Myung": 2, "Hahmlet": 2},
+        "sans": {"Noto Sans KR": 4, "NanumGothic": 4, "IBM Plex Sans KR": 3, "Gowun Dodum": 2, "Orbit": 1,
+                 "Sunflower": 1},
+        "display": {"Black Han Sans": 2, "Do Hyeon": 2, "Jua": 1, "Noto Sans KR": 2, "NanumMyeongjo": 1},
+        "mono": {},
+        "hand": {"Nanum Pen": 2},
+    },
+    "thai": {
+        # looped faces are the print / government norm (Sarabun is the official government font)
+        "serif": {"Sarabun": 4, "Noto Serif Thai": 3, "Taviraj": 2, "Trirong": 2, "Pridi": 2, "Maitree": 2,
+                  "Noto Sans Thai Looped": 2, "IBM Plex Sans Thai Looped": 2},
+        "sans": {"Noto Sans Thai": 4, "Prompt": 3, "Kanit": 3, "Anuphan": 2, "IBM Plex Sans Thai": 3, "Athiti": 1,
+                 "Mitr": 2, "Niramit": 2},
+        "display": {"Kanit": 3, "Prompt": 2, "Mitr": 2, "Chakra Petch": 2, "Taviraj": 1},
+        "mono": {},
+        "hand": {"Niramit": 1},
+    },
+    "persian": {
+        "serif": {"Noto Naskh Arabic": 4, "Amiri": 2, "Scheherazade New": 2, "Markazi Text": 2, "Lateef": 1,
+                  "Mirza": 1},
+        "sans": {"Vazirmatn": 5, "Noto Sans Arabic": 3, "IBM Plex Sans Arabic": 2, "Cairo": 1, "Mada": 1,
+                 "Harmattan": 1},
+        "display": {"Lalezar": 3, "Noto Kufi Arabic": 2, "Reem Kufi": 1, "El Messiri": 1, "Changa": 1,
+                    "Vazirmatn": 2},
+        "mono": {},
+        "hand": {"Aref Ruqaa": 1},
+    },
+})
+POOLS["latin"]["sans"]["Be Vietnam Pro"] = 1
+
+# Fallback face per script (rare characters missing from a display face must not fall back to system fonts).
+SCRIPT_FALLBACK = {"hans": "Noto Sans SC", "hant": "Noto Sans TC", "japanese": "Noto Sans JP",
+                   "hangul": "Noto Sans KR", "thai": "Noto Sans Thai", "persian": "Noto Naskh Arabic",
+                   "arabic": "Noto Naskh Arabic", "urdu": "Noto Naskh Arabic", "devanagari": "Noto Sans Devanagari",
+                   "bengali": "Noto Sans Bengali"}
+# Latin-script languages whose letters many Latin faces lack: filter pools by manifest coverage.
+COVERAGE_NEED = {"vi": "vietnamese", "tr": "turkish", "pl": "polish"}
+
 LATIN_COMPANION = {  # Latin face to pair with non-Latin scripts for embedded Latin text / digits
     "serif": ["Noto Serif", "Tinos", "PT Serif", "Source Serif 4"],
     "sans": ["Noto Sans", "Roboto", "Open Sans", "Arimo"],
@@ -93,7 +161,10 @@ LATIN_COMPANION = {  # Latin face to pair with non-Latin scripts for embedded La
 }
 
 SCRIPT_OF_LANG = {"hi": "devanagari", "bn": "bengali", "ar": "arabic", "ur": "urdu", "ru": "cyrillic",
-                  "es": "latin", "fr": "latin", "pt": "latin", "id": "latin", "de": "latin"}
+                  "es": "latin", "fr": "latin", "pt": "latin", "id": "latin", "de": "latin",
+                  "en": "latin", "it": "latin", "pl": "latin", "nl": "latin", "tr": "latin", "vi": "latin",
+                  "zh-Hans": "hans", "zh-Hant": "hant", "ja": "japanese", "ko": "hangul", "th": "thai",
+                  "fa": "persian"}
 
 
 @lru_cache(maxsize=1)
@@ -114,9 +185,15 @@ def has_family(family):
     return family in manifest()
 
 
-def pick(rng, script, role):
+def covers(family, need):
+    return not need or any(f["coverage"].get(need, 0) >= 0.98 for f in family_faces(family))
+
+
+def pick(rng, script, role, need=None):
     pool = POOLS[script].get(role) or POOLS[script].get("sans") or {}
-    pool = {k: v for k, v in pool.items() if has_family(k)}
+    pool = {k: v for k, v in pool.items() if has_family(k) and covers(k, need)}
+    if not pool and need:
+        pool = {k: 1 for k in ("Noto Serif", "Noto Sans") if has_family(k) and covers(k, need)}
     if not pool:
         raise KeyError(f"no fonts for {script}/{role}")
     names, weights = zip(*pool.items())
@@ -173,13 +250,15 @@ class FontSet:
     def __init__(self, rng, lang, prefer=None):
         self.lang = lang
         self.script = SCRIPT_OF_LANG[lang]
+        self.need = COVERAGE_NEED.get(lang)
         self.fams = {}
         prefer = prefer or {}
-        for role in ("serif", "sans", "display", "mono", "hand", "nastaliq"):
+        for role in ("serif", "sans", "display", "mono", "hand", "nastaliq", "kai"):
             if role not in POOLS[self.script] or not POOLS[self.script][role]:
                 continue
-            self.fams[role] = prefer.get(role) or pick(rng, self.script, role)
+            self.fams[role] = prefer.get(role) or pick(rng, self.script, role, self.need)
         self.latin = {r: rng.choice([f for f in LATIN_COMPANION[r] if has_family(f)]) for r in LATIN_COMPANION}
+        self.fallback = SCRIPT_FALLBACK.get(self.script)
 
     def stack(self, role):
         fam = self.fams.get(role) or self.fams.get("sans") or self.fams.get("serif")
@@ -187,12 +266,14 @@ class FontSet:
         parts = [f"'{fam}'"]
         if self.script != "latin" and self.script != "cyrillic":
             parts.append(f"'{self.latin[lat_role]}'")
+        if self.fallback and self.fallback != fam:
+            parts.append(f"'{self.fallback}'")
         parts.append("'Noto Sans'")
         parts.append("sans-serif")
         return ", ".join(parts)
 
     def css(self):
-        fams = set(self.fams.values()) | set(self.latin.values()) | {"Noto Sans"}
+        fams = set(self.fams.values()) | set(self.latin.values()) | {"Noto Sans"} | ({self.fallback} - {None})
         return "\n".join(face_css(f) for f in sorted(fams) if has_family(f))
 
     def describe(self):

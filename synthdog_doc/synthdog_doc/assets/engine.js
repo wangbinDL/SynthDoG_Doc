@@ -639,8 +639,66 @@
     });
   };
 
+  // Thai has no spaces between words: split the Python-emitted '.w.seg' runs into dictionary words with the same
+  // ICU segmenter Chromium uses for line breaking, so tokens are line-break units (one rectangle each).
+  SDD.segmentThai = function () {
+    const segs = document.querySelectorAll('.w.seg');
+    if (!segs.length || typeof Intl === 'undefined' || !Intl.Segmenter) return;
+    const seg = {};
+    const glue = /^[\s.,;:!?)\]»”’ๆฯ%、。，．・：；？！）〕］｝〉》」』】ー々]+$/;
+    const opener = /[（〔［｛〈《「『【“‘(\[]$/;
+    segs.forEach((w) => {
+      const lg = ((w.closest('[lang]') || document.documentElement).getAttribute('lang') || 'th').toLowerCase();
+      const loc = lg.startsWith('zh') ? 'zh' : (lg.startsWith('ja') ? 'ja' : 'th');
+      const sg = seg[loc] || (seg[loc] = new Intl.Segmenter(loc, { granularity: 'word' }));
+      const toks = [];
+      for (const s of sg.segment(w.textContent || '')) {
+        if (toks.length && (glue.test(s.segment) || opener.test(toks[toks.length - 1]))) toks[toks.length - 1] += s.segment;
+        else toks.push(s.segment);
+      }
+      w.classList.remove('seg');
+      if (toks.length <= 1) return;
+      const frag = document.createDocumentFragment();
+      toks.forEach((t, i) => {
+        const e = w.cloneNode(false);
+        e.textContent = t;
+        frag.appendChild(e);
+        if (i < toks.length - 1) frag.appendChild(document.createElement('wbr'));
+      });
+      w.replaceWith(frag);
+      SDD.thaiSplit = (SDD.thaiSplit || 0) + 1;
+    });
+  };
+
+  // Vertical (tategaki) flow for Japanese / Traditional Chinese books: lines run top-to-bottom and are stacked right
+  // to left. The first token past the box's left (or bottom) edge and everything after it are cut -- the rest of the
+  // text is "continued on the next page".
+  SDD.flowVertical = function (zone) {
+    const box = zone.querySelector('.vbody') || zone;
+    const zr = box.getBoundingClientRect();
+    const toks = Array.from(box.querySelectorAll('.w, .m'));
+    let cut = -1;
+    for (let i = 0; i < toks.length; i++) {
+      const r = toks[i].getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      if (r.left < zr.left - 0.5 || r.bottom > zr.bottom + 0.5) { cut = i; break; }
+    }
+    if (cut < 0) return;
+    const t = toks[cut];
+    let blk = t;
+    while (blk && blk.parentElement !== box) blk = blk.parentElement;
+    if (blk) { let s = blk.nextSibling; while (s) { const nx = s.nextSibling; s.remove(); s = nx; } }
+    let n = t;
+    while (n) { const nx = n.nextSibling; n.remove(); n = nx; }
+    const para = blk;
+    if (para && !para.querySelector('.w, .m')) para.remove();
+    SDD.dropped += 1;
+    SDD.vcut = (SDD.vcut || 0) + 1;
+  };
+
   SDD.layout = function () {
     const t0 = performance.now();
+    SDD.segmentThai();
     SDD.renderMath();
     SDD.fitText();
     SDD.fitOptions();
@@ -649,6 +707,7 @@
     const zones = Array.from(document.querySelectorAll('.zone.flow'));
     zones.sort((a, b) => (parseFloat(a.dataset.zorder || 0) - parseFloat(b.dataset.zorder || 0)));
     zones.forEach(SDD.flowZoneBalanced);
+    document.querySelectorAll('.zone.vflow').forEach(SDD.flowVertical);
     zones.forEach(SDD.lineNumbers);
     SDD.fitBoxes();
     // empty-zone cleanup: remove annotated blocks fully outside the page
@@ -694,9 +753,21 @@
     const toks = el.querySelectorAll('.w, .m');
     const lines = [];
     let cur = null;
+    const vertical = (getComputedStyle(el).writingMode || '').startsWith('vertical');
     const push = (r, txt, hyph) => {
       if (r.width <= 0 && r.height <= 0) return;
       const box = rel(r, pr);
+      if (vertical) {      // vertical lines: same line = overlapping x range (tokens arrive top to bottom)
+        const w = box[2] - box[0];
+        if (cur && box[0] < cur.box[2] - 0.45 * Math.min(w, cur.box[2] - cur.box[0]) &&
+            box[2] > cur.box[0] + 0.3 * w) {
+          cur.box = union(cur.box, box); cur.text += txt;
+        } else {
+          cur = { box, text: txt, vertical: true };
+          lines.push(cur);
+        }
+        return;
+      }
       const h = box[3] - box[1];
       if (cur && box[1] < cur.box[3] - 0.45 * Math.min(h, cur.box[3] - cur.box[1]) &&
           box[3] > cur.box[1] + 0.3 * h) {
