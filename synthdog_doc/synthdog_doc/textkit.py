@@ -360,8 +360,10 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
     out = []
     if _segment_of(lang) == "cjk" and re.search(r"[_^]", text):
         text = cjk_math_wrap(text)
+    short_cjk = len(text.strip()) <= 40
     parts = _LATEX_INLINE.split(text) if "$" in text else [text]
-    for part in parts:
+    last_part = max((i for i, pt in enumerate(parts) if pt and not pt.startswith("$")), default=-1)
+    for pi, part in enumerate(parts):
         if not part:
             continue
         if part.startswith("$") and part.endswith("$") and len(part) > 2:
@@ -370,7 +372,9 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
             else:
                 out.append(f'<span class="m" data-latex="{esc(sanitize_latex(part[1:-1]))}"></span> ')
             continue
-        for m in _WORD_RE.finditer(part):
+        wmatches = list(_WORD_RE.finditer(part))
+        for wi, m in enumerate(wmatches):
+            last_word = pi == last_part and wi == len(wmatches) - 1
             tok = m.group(0)
             word = strip_emoji(tok.rstrip())
             space = tok[len(word):] if word else ""
@@ -414,7 +418,13 @@ def words_html(text, lang=None, hyph=False, cls="w", digits=False, extra_cls="")
             c = cls + (" " + extra_cls if extra_cls else "")
             seg = _segment_of(lang)
             if seg == "cjk" and _CJK_CHAR.search(word):
+                if short_cjk:
+                    # titles, captions, slide cards: break only between words (engine.js segments with ICU)
+                    out.append(f'<span class="{c} seg">{esc(word)}{" " if space else ""}</span>')
+                    continue
                 toks = cjk_tokens(word)
+                if last_word and len(toks) >= 3 and len(toks[-1]) <= 2 and len(toks[-2]) <= 2:
+                    toks[-2:] = [toks[-2] + toks[-1]]      # no single-character last line (widow control)
                 for k, t in enumerate(toks):
                     out.append(f'<span class="{c}">{esc(t)}{" " if space and k == len(toks) - 1 else ""}</span>')
                 continue

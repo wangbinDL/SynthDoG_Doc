@@ -68,14 +68,16 @@ def main():
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--no-real", action="store_true")
     ap.add_argument("--types", default=",".join(TYPES), help="restrict the round to some document types")
+    ap.add_argument("--langs", default=",".join(LANGS), help="languages of the synthetic pages")
     a = ap.parse_args()
     TYPES[:] = [t for t in TYPES if t in a.types.split(",")]
+    SYN_LANGS = a.langs.split(",")
     rng = random.Random(1234)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     tasks = []
     for t in TYPES:
-        for lang in LANGS:
+        for lang in SYN_LANGS:
             for i in range(a.per_cell):
                 p = Path(a.renders) / f"{t}__{lang}__v{a.version}__{i:04d}.jpg"
                 if p.exists():
@@ -96,7 +98,7 @@ def main():
     if a.prev:
         pv = a.version - 1
         for t in TYPES:
-            for lang in LANGS:
+            for lang in SYN_LANGS:
                 pa = Path(a.prev) / f"{t}__{lang}__v{pv}__0000.jpg"
                 pb = Path(a.renders) / f"{t}__{lang}__v{a.version}__0000.jpg"
                 if pa.exists() and pb.exists():

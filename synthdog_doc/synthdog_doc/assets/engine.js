@@ -644,12 +644,16 @@
   SDD.segmentThai = function () {
     const segs = document.querySelectorAll('.w.seg');
     if (!segs.length || typeof Intl === 'undefined' || !Intl.Segmenter) return;
-    const sg = new Intl.Segmenter('th', { granularity: 'word' });
-    const glue = /^[\s.,;:!?)\]»”’ๆฯ%]+$/;
+    const seg = {};
+    const glue = /^[\s.,;:!?)\]»”’ๆฯ%、。，．・：；？！）〕］｝〉》」』】ー々]+$/;
+    const opener = /[（〔［｛〈《「『【“‘(\[]$/;
     segs.forEach((w) => {
+      const lg = ((w.closest('[lang]') || document.documentElement).getAttribute('lang') || 'th').toLowerCase();
+      const loc = lg.startsWith('zh') ? 'zh' : (lg.startsWith('ja') ? 'ja' : 'th');
+      const sg = seg[loc] || (seg[loc] = new Intl.Segmenter(loc, { granularity: 'word' }));
       const toks = [];
       for (const s of sg.segment(w.textContent || '')) {
-        if (toks.length && glue.test(s.segment)) toks[toks.length - 1] += s.segment;
+        if (toks.length && (glue.test(s.segment) || opener.test(toks[toks.length - 1]))) toks[toks.length - 1] += s.segment;
         else toks.push(s.segment);
       }
       w.classList.remove('seg');
