@@ -22,7 +22,7 @@ SynthDoG-Doc 在它的基础上重写为 **整页文档合成器**：生成的�
 | 维度 | 范围 |
 |---|---|
 | 文档类型（9 类） | PPT 幻灯片、试卷、单栏论文、双栏论文、报纸、杂志、书籍、教材、研报 |
-| 语言（10 种，去掉中英文后按使用人数取 Top-10） | 印地语、西班牙语、阿拉伯语、法语、孟加拉语、葡萄牙语、印尼语、乌尔都语、俄语、德语（选择依据见 [synthdog_doc/docs/languages.md](synthdog_doc/docs/languages.md)） |
+| 语言（22 种） | 第一阶段 10 种：印地、西班牙、阿拉伯、法、孟加拉、葡萄牙、印尼、乌尔都、俄、德；第二阶段新增 12 种：简体中文、繁体中文、英、日、韩、越南、泰、土耳其、波斯、意大利、波兰、荷兰（选择逻辑见门户「语言扩展」页与 [docs/ccg_phase2_synthesis.md](docs/ccg_phase2_synthesis.md)） |
 | 每页产物 | 整页图像 `.jpg`、OmniDocBench 标注 `.json`、阅读顺序 Markdown `.md`、生成参数 `.meta.json` |
 | 页面物理属性 | 纸张、长宽比、DPI 按 OmniDocBench 1651 页统计采样；数字原生 / 扫描复印 / 手机翻拍三种成像 |
 
@@ -68,7 +68,27 @@ OmniDocBench 尺寸统计      10 语种排印规则（RTL、断字…）    输
 
 最终数据：9 类 × 10 语 × 100 页 = 9000 页（0 失败，7.3 GB，存于 JFS `processed/synthdog_doc/sdd-v6/pages`），由 tag `v1.0` 的代码生成。迭代过程、版本对比、评审细节都在门户上。
 
-## 五、目录结构
+## 五、第二阶段成果（分支 `phase2`，进行中）
+
+| 子任务 | 结果 |
+|---|---|
+| 语言扩展 | 10 → 22 种；中日文避头尾与按词断行、日文 / 繁中书籍竖排、泰文词典切词、韩文按语节断行、波斯 RTL 与本地数字；v7 盲评中评委把合成页误判为真的比例 Sol 24%、Opus 5%（v6 为 12% / 2%） |
+| 数据池 | 正文主池换成 FinePDFs（CommonCrawl 真实 PDF 全文，ODC-By），22 语种入池，经数采平台下载 57 个分片（216 GB）到 JFS |
+| 真实评测集 | 22 语 × 9 类真实 PDF 1591 页，PP-DocLayoutV3 区域 + 三模型（Gemini 4 Argon / GPT-6-Astra / Claude Opus 5.5）标注与共识，A/B 两层许可发布；单独分支 `feat/real-evalset` |
+| 模型评测 | 合成集 22 语 1980 页、7 个模型：Claude Opus 5.5 96.73 / GPT-6-Astra 95.86 / GPT-6.1-Sol 94.65 / Qwen3.8-27B 93.43 / MinerU2.5-Pro 90.91 / Qwen3.5-4B 88.79 / PaddleOCR-VL-1.6 87.75（OmniDocBench 综合分；标注自检 99.95） |
+| 批量生产 | 生产模式（浏览器常驻 + Parquet 分片）；Top-20 语 × 每语 1 万页 = 199,980 页，4 台 64 核 worker 并行 38 分钟内完成，0 失败，平均 1.69 核·秒 / 页，产物 147 GB；内容包改写按任务选模型（论文 DeepSeek-v4.1-Flash，试卷与新闻 GPT-6.1-Sol） |
+
+批量生产示例（一台 64 核 worker）：
+
+```bash
+python3 -m synthdog_doc.generate --langs hi,es,ar,fr,bn --n 1111 --version 7 --seed 20261128 \
+  --out /mnt/wangbin02-jfs/processed/synthdog_doc/prod200k/g1 --procs 64 --chunk 24 \
+  --persistent --format parquet --shot jpeg --max-tasks 0
+python3 scripts/prod_verify.py --root /mnt/wangbin02-jfs/processed/synthdog_doc/prod200k --groups g1 \
+  --n 1111 --version 7 --out /tmp/verify.json      # 键差集 / 重复 / 抽样读回验收
+```
+
+## 六、目录结构
 
 ```
 synthdog_doc/            SynthDoG-Doc 主体（Python 包 + 脚本 + 文档，详见 synthdog_doc/README.md）
@@ -76,7 +96,8 @@ synthdog_doc/            SynthDoG-Doc 主体（Python 包 + 脚本 + 文档，�
     doctypes/            9 类文档模板
     assets/engine.js     页内分栏排版与真值提取引擎
     render.py generate.py degrade.py export.py lint.py judge.py …
-  scripts/               评审、门户、素材打标、抽样等脚本
+  scripts/               评审、门户、素材打标、抽样；bench_*（模型评测）、prod_*（生产验收 / 修补）、
+                         datapool/（数据池）、bakeoff/（改写模型选型）
   docs/                  语言选择等文档
 docs/TASKS.md            任务记录（阶段目标、拆解、决策、进度）
 docs/donut_README.md     原 Donut / SynthDoG 说明
@@ -84,7 +105,7 @@ synthdog/                原版 SynthDoG
 donut/ train.py …        原版 Donut 模型代码（未改动）
 ```
 
-## 六、快速开始
+## 七、快速开始
 
 ```bash
 pip install playwright pyphen opencv-python pillow numpy && playwright install chromium
@@ -94,7 +115,7 @@ python3 -m synthdog_doc.generate --types newspaper,exam --langs ar,hi --n 4 --ve
 python3 -m synthdog_doc.lint --renders /tmp/sdd
 ```
 
-## 七、致谢与许可
+## 八、致谢与许可
 
 本项目基于 NAVER Clova 的 [Donut / SynthDoG](https://github.com/clovaai/donut)（MIT License），
 原许可证见 [LICENSE](LICENSE)，第三方声明见 [NOTICE](NOTICE)。

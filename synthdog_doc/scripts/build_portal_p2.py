@@ -389,6 +389,11 @@ def build_production(portal):
             for k, v in ((g.get("verify") or {}).get("empty_markdown") or {}).items():
                 em[k] = em.get(k, 0) + v
         em_txt = "、".join(f"{k} {v:,} 页" for k, v in sorted(em.items(), key=lambda kv: -kv[1])) or "无"
+        pl = D / "portal_src/prod200k_empty_md.json"
+        patched = json.loads(pl.read_text()) if pl.exists() else []
+        patch_li = (f"<li>首轮验收另发现 <b>{len(patched)}</b> 页非广告页只有页眉 / 页码（中日泰文试卷续页在题目排完后仍出页、"
+                    f"英文单栏论文少数页）：生成器已加“没有正文就重新抽版式”的保护，这些页原地重生成后复验通过"
+                    f"（scripts/prod_patch.py，记录在产物目录 _patches.jsonl）。</li>") if patched else ""
         prod_html = f"""<p>4 台 64 核 CPU worker 并行，每台一组 5 种语言 × 9 类 × 1111 页，共 <b>{prod['pages']:,}</b> 页、失败 <b>{prod['errors']}</b> 页；
 总计 <b>{prod['cpu_core_hours']}</b> 核·时（平均 <b>{prod['core_sec_per_page']}</b> 核·秒 / 页），最慢一组 {prod['wall_max'] / 60:.0f} 分钟跑完，产物 {prod['gb']:.0f} GB（JFS <code>processed/synthdog_doc/prod200k/</code>）。</p>
 {prod_tbl}
@@ -396,7 +401,8 @@ def build_production(portal):
 <p class="note">“开页面”不含每个进程第一次启动浏览器（约 40 秒，每 400 页回收一次时重来）。</p></div>
 <div class="card"><h3>验收怎么做的</h3><ul><li>键差集：按“类型 × 语言 × 序号”列出应有的 49,995 个页名，与分片里实际的页名逐个比对，缺失、多余、重复都为 0 才算过。</li>
 <li>抽样读回：每组随机 100 页完整读出，JPEG 能解码且尺寸与记录一致、OmniDocBench 标注能解析、Markdown 非空（整页广告除外）。</li>
-<li>Markdown 为空的页：{e(em_txt)}。全部是整页广告——按 OmniDocBench 规则广告标为 abandon、不转写，属预期行为。</li></ul></div></div>"""
+<li>Markdown 为空的页：{e(em_txt)}。全部是整页广告——按 OmniDocBench 规则广告标为 abandon、不转写，属预期行为。</li>
+{patch_li}</ul></div></div>"""
     else:
         prod_html = "<p class='note'>Top-20 × 1 万页压测进行中。</p>"
     cost = P.get("cost", {})
