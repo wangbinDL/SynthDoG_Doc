@@ -2,6 +2,8 @@
 import json, sys
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parents[2]))
+import os
+
 from synthdog_doc import llm
 from synthdog_doc.langs import LANGS, LANG_ORDER
 SEL = [x for x in os.environ.get('SDD_LANGS', ','.join(LANG_ORDER)).split(',') if x]  # languages to run
