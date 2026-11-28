@@ -210,7 +210,8 @@ def main():
     style = style[style.index("<style>"):style.index("</style>") + len("</style>")]
     nav = "".join(f'<a href="{f}"{" class=\"on\"" if f == "evalset.html" else ""}>{t}</a>' for f, t in
                   [("p2.html", "第二阶段总览"), ("languages.html", "语言扩展"), ("datapool.html", "数据池"),
-                   ("benchmark.html", "模型评测"), ("evalset.html", "真实评测集"), ("production.html", "批量生产")])
+                   ("train.html", "训练数据"), ("benchmark.html", "模型评测"), ("evalset.html", "真实评测集"),
+                   ("production.html", "批量生产")])
     body = f"""
 <section><h1>真实多语种文档评测集</h1>
 <p class="sub">合成数据好不好，最终要在真实文档上检验。这里从 CommonCrawl 抓到的真实 PDF 里，为 22 个语种 × 9 类版面各找 5 份文档、每份抽 2 页，用三个最强模型构建 OmniDocBench 格式的标注，目标是一个可以开源发布的评测集。</p>
