@@ -42,6 +42,7 @@ def card(man, agree, out_dir):
     ts = collections.Counter()
     for x in agree:
         ts.update(x.get("text_source") or {})
+    n_cc = sum(1 for m in man if m.get("fetch_source") == "commoncrawl")
     rows = "\n".join(f"| {LANG_EN.get(lg, lg)} | `{lg}` | " + " | ".join(
         str(sum(1 for m in man if m["lang"] == lg and m["doc_type"] == t)) for t in TYPES) + f" | {langs[lg]} |"
         for lg in sorted(langs, key=lambda l: list(LANG_EN).index(l) if l in LANG_EN else 99))
@@ -102,6 +103,10 @@ annotator that is not a benchmark subject, breaks ties.
   dump / WARC file / offset.
 - `images/` — tier-A page images (`<page_id>.jpg`).
 - `render_pages.py` — rebuilds any page image from the original PDF (URL or CommonCrawl WARC) and checks the SHA-256.
+  Re-rendered pages were pixel-identical to the released images in spot checks of URL-fetched documents; the WARC path
+  (for the {n_cc} pages whose PDF came from CommonCrawl) reuses the fetcher's record extraction and could not be
+  re-tested from the build network, which CommonCrawl throttles. A site may also have replaced the file since — the
+  SHA-256 check reports that.
 - `agreement.jsonl`, `annotations/` — per-page agreement statistics and raw annotator answers.
 
 ## Licence

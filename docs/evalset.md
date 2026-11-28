@@ -64,7 +64,7 @@ FinePDFs 候选（每语种约 4000 份）
 | `omnidocbench_gt.json` | 真值，每页一条，OmniDocBench 格式；`page_attribute` 另有 `sdd_lang`、`sdd_doc_type`、`born_digital` |
 | `manifest.jsonl` | 每页的原始网址、域名、PDF SHA-256、页码、渲染 DPI、图像尺寸、许可层、CommonCrawl dump / WARC 文件 / 偏移 |
 | `images/` | A 层页面图像 |
-| `render_pages.py` | 从原始 PDF（原网址或 CommonCrawl WARC）重建任意页面图像，校验 SHA-256；抽测与发布图像逐像素一致 |
+| `render_pages.py` | 从原始 PDF（原网址或 CommonCrawl WARC）重建任意页面图像，校验 SHA-256；原网址取得的文档抽测与发布图像逐像素一致；308 页的 PDF 来自 CommonCrawl，WARC 路径沿用抓取器的解析代码，但公司出口被 CommonCrawl 限流，未能复测 |
 | `agreement.jsonl`、`annotations/` | 每页一致性统计、三位标注者的原始答案（用于留一法） |
 | `README.md` | 英文数据卡 |
 

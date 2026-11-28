@@ -182,15 +182,19 @@ def main():
         for n, m in M.items():
             cells = []
             for lg in langs_r:
-                o = (m["buckets"].get(f"sdd_lang: {lg}") or {}).get("overall")
-                te = (m["buckets"].get(f"sdd_lang: {lg}") or {}).get("text_edit")
-                v = o if o is not None else ((1 - te) * 100 if te is not None else None)
-                cells.append(f"<td class='n'><span class='{'weak' if v is not None and v < 80 else ''}'>{v:.1f}</span></td>"
+                b = m["buckets"].get(f"sdd_lang: {lg}") or {}
+                v, star = b.get("overall"), ""
+                if v is None:            # no formulas / tables on this language's pages: mean of available components
+                    comps = [x for x in ((1 - b["text_edit"]) * 100 if b.get("text_edit") is not None else None,
+                                         b["formula_cdm"] * 100 if b.get("formula_cdm") is not None else None,
+                                         b["table_teds"] * 100 if b.get("table_teds") is not None else None) if x is not None]
+                    v, star = (sum(comps) / len(comps), "*") if comps else (None, "")
+                cells.append(f"<td class='n'><span class='{'weak' if v is not None and v < 80 else ''}'>{v:.1f}{star}</span></td>"
                              if v is not None else "<td class='n'>—</td>")
             lr.append(f"<tr><td><b>{e(m['display'])}</b></td>{''.join(cells)}</tr>")
         bench_html += ("<h3 style='margin-top:14px'>分语言</h3><div class='scroll'><table class='t'><thead><tr><th>模型</th>"
                        + "".join(f"<th>{e(LANG_ZH.get(l, l))}</th>" for l in langs_r) + "</tr></thead><tbody>" + "".join(lr)
-                       + "</tbody></table></div><p class='note'>该语种的页面若没有公式或表格、算不出三项综合分，就显示文本得分 (1 − 文本编辑距离) × 100。红色 = 低于 80。</p>")
+                       + "</tbody></table></div><p class='note'>带 * 的格：该语种的页面里没有独立公式（或没有表格），三项综合分算不出来，取可用项的平均。红色 = 低于 80。</p>")
     # release package
     rel_html = "<p class='note'>发布包在标注完成后生成。</p>"
     rm = Path(a.release) / "manifest.jsonl"
