@@ -15,6 +15,9 @@ CORPUS_DIR = Path("/data/synthdog-doc/corpus")
 POOL_DIRS = [Path(p) for p in os.environ.get(
     "SDD_POOL_DIRS", "/mnt/wangbin02-jfs/processed/synthdog_doc/datapool/v1:/data/synthdog-doc/pool_prose").split(":") if p]
 CONTENT_DIR = Path("/data/synthdog-doc/content")
+# Documents of the real eval set (doc ids and URLs, one per line): never used as synthetic body text, so a model trained
+# on SynthDoG-Doc pages has not seen the eval pages' text.
+POOL_EXCLUDE = Path(os.environ.get("SDD_POOL_EXCLUDE", "/data/synthdog-doc/evalset/exclude_docs.txt"))
 
 _SITE_SUFFIX = re.compile(r"\s*[|\-–—:»·•]\s*[^|\-–—:»·•]{2,40}$")
 _BAD_LINE = re.compile(r"(https?://|www\.|@|©|cookie|javascript|\.php|\.html|\{|\}|\|{2,})", re.I)
@@ -78,15 +81,18 @@ class Corpus:
             f = d / lang / "prose_sample.jsonl" if (d / lang / "prose_sample.jsonl").exists() else d / f"{lang}.jsonl"
             if f.exists():
                 cap = int(os.environ.get("SDD_POOL_MAX_DOCS", "600"))   # per renderer process: bounded memory
+                excl = set(POOL_EXCLUDE.read_text(encoding="utf-8").split()) if POOL_EXCLUDE.exists() else set()
                 rows = []
                 with open(f, encoding="utf-8") as fh:
                     for k, line in enumerate(fh):
                         if k >= cap:
                             break
                         try:
-                            rows.append(json.loads(line))
+                            r = json.loads(line)
                         except Exception:  # noqa: BLE001
-                            pass
+                            continue
+                        if r.get("doc_id") not in excl and r.get("url") not in excl:
+                            rows.append(r)
                 cjk = lang in ("zh-Hans", "zh-Hant", "ja", "th")
                 for a in rows:
                     n_in = sum(len(sct.get("paras", [])) for sct in a.get("sections", []))

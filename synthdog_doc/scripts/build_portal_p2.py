@@ -13,7 +13,8 @@ from pathlib import Path
 
 D = Path("/data/synthdog-doc")
 PAGES = [("p2.html", "第二阶段总览"), ("languages.html", "语言扩展"), ("datapool.html", "数据池"),
-         ("benchmark.html", "模型评测"), ("evalset.html", "真实评测集"), ("production.html", "批量生产")]
+         ("train.html", "训练数据"), ("benchmark.html", "模型评测"), ("evalset.html", "真实评测集"),
+         ("production.html", "批量生产")]
 TYPE_ZH = {"ppt": "PPT", "exam": "试卷", "paper_single": "单栏论文", "paper_double": "双栏论文", "newspaper": "报纸",
            "magazine": "杂志", "book": "书籍", "textbook": "教材", "report": "研报"}
 
@@ -212,7 +213,7 @@ def build_datapool(portal):
 <div class="grid g2"><div class="card"><h3>主池：FinePDFs（ODC-By）</h3><p>HuggingFaceFW/finepdfs，4.76 亿份文档、1732 个语种。每条记录带原始 URL、CommonCrawl WARC 文件与偏移（能取回原始 PDF）、按页切分位置、抽取方式（原生文字层 / OCR）、质量分。每语种先取 1 个分片（约 4.5 GB，数十万文档），规模不够时再加分片。</p></div>
 <div class="card"><h3>补充：FineWeb-2（ODC-By）</h3><p>多语种网页正文，按国家域名 / 新闻站过滤后给报纸、杂志版面用；FinePDFs 偏少的乌尔都、孟加拉、印地用它补足。维基百科（CC BY-SA）单列，不混入开源主体。</p></div>
 <div class="card"><h3>许可注意</h3><p>ODC-By 只覆盖“数据集的整理”，不转移底层文档的著作权。开源发布时：合成页面只用池中文本的片段重新排版；真实评测集分两层（可再分发文档发图像 + 标注；其余只发链接、WARC 指针和标注）。内部 crop 图片不进开源版，改用 Wikimedia Commons（CC0 / PD / CC BY）与代码重绘的图表。</p></div>
-<div class="card"><h3>评测集隔离</h3><p>真实评测集的文档与合成正文同出 FinePDFs，入选评测集的文档 id 会从合成正文池中剔除，避免“考题泄漏”。</p></div></div></section>
+<div class="card"><h3>评测集隔离</h3><p>真实评测集的文档与合成正文同出 FinePDFs。入选评测集的 945 份文档（按文档 id 与网址）已列入剔除清单，之后生成的页面不会再用到它们的文字。注意：这条规则是 2026-11-28 核查后补上的——之前的 20 万页压测数据生成时尚未剔除，核查发现 2 份乌尔都文文档在正文池里，受影响页面见 <a href="train.html">训练数据</a> 页，训练前删除。</p></div></div></section>
 <section><h2>清洗规则（每条都计数）</h2>
 <div class="card"><ol>
 <li><b>语种</b>：整篇语言识别结果与配置一致（中文再按简繁字形分开）。</li>
@@ -262,6 +263,89 @@ def partial_overall(b):
              b["table_teds"] * 100 if b.get("table_teds") is not None else None]
     comps = [c for c in comps if c is not None]
     return (sum(comps) / len(comps), "*") if comps else None
+
+
+def build_train(portal):
+    import collections  # noqa: PLC0415
+
+    def load(name, default):
+        f = D / "portal_src" / name
+        return json.loads(f.read_text()) if f.exists() else default
+    LJ = json.loads((D / "portal_src/languages.json").read_text())["languages"]
+    Lz = {r["code"]: r["zh"] for r in LJ}
+    order = [r["code"] for r in sorted(LJ, key=lambda r: r["rank"] or 99)]
+    V = load("prod200k_verify.json", {})
+    samples = load("train_samples.json", [])
+    ts = load("train_textsource.json", {})
+    ov = load("train_overlap.json", {})
+    prod = collections.Counter()
+    for g in V.values():
+        prod.update(g.get("langs") or {})
+    p1 = {"hi", "es", "ar", "fr", "bn", "pt", "id", "ur", "ru", "de"}      # phase 1: 900 v6 pages, 90 in bench900
+    hits = {h["name"] for h in ov.get("production_pages_with_eval_text", [])}
+    hit_lang = collections.Counter(n.split("__")[1] for n in hits)
+    kinds = [("paper", "论文"), ("exam", "试卷"), ("ppt", "PPT"), ("report", "研报"), ("lesson", "教材"),
+             ("feature", "杂志专题"), ("news", "新闻")]
+
+    def n_packs(lg, k):
+        f = D / "content" / lg / f"{k}.jsonl"
+        return sum(1 for _ in open(f, encoding="utf-8")) if f.exists() else 0
+    rows, tot = [], 0
+    for lg in order:
+        a, b, drop = prod.get(lg, 0), (810 if lg in p1 else 0), hit_lang.get(lg, 0)
+        tot += a + b - drop
+        src = ts.get(lg) or {}
+        pdf = src.get("finepdfs_pool", 0) / max(1, sum(src.values())) * 100 if src else None
+        rows.append([f"<b>{e(Lz.get(lg, lg))}</b>", e(lg), f"{a:,}" if a else "—", f"{b:,}" if b else "—",
+                     e(drop or "—"), f"<b>{a + b - drop:,}</b>" if a + b else "<span class='weak'>0</span>",
+                     f"{pdf:.0f}%" if pdf is not None else "—"] + [e(n_packs(lg, k)) for k, _ in kinds])
+    cnt_tbl = table(["语言", "代码", "第二阶段 v7", "第一阶段 v6（已扣评测 90 页）", "与评测集重叠需删", "可用于训练",
+                     "书籍正文来自真实 PDF"] + [f"{z}包" for _, z in kinds], rows, num_cols=tuple(range(2, 14)))
+    hi_paper = n_packs("hi", "paper")
+    found = ov.get("eval_docs_in_pool", [])
+    seen, ov_rows = set(), []
+    for d in found:
+        if (d["doc_id"], d["lang"]) in seen:
+            continue
+        seen.add((d["doc_id"], d["lang"]))
+        ov_rows.append([e(Lz.get(d["lang"], d["lang"])), e(d["eval_page"]), e(d["url"][:70]),
+                        "是" if d.get("used_by_production") else "否（在前 600 篇之外，未被读入）"])
+    ov_tbl = table(["语言", "评测页", "原文网址", "压测时是否被读入"], ov_rows) if ov_rows else "<p class='note'>未发现重叠。</p>"
+    by = {(x["lang"], x["doc_type"]): x for x in samples}
+    grid = []
+    for lg in order:
+        cells = []
+        for t in TYPE_ZH:
+            x = by.get((lg, t))
+            cells.append(f'<a href="p2/train/l/{x["name"]}.jpg" target="_blank"><img src="p2/train/s/{x["name"]}.jpg" '
+                         f'loading="lazy" alt=""></a>' if x else "—")
+        if any(c != "—" for c in cells):
+            grid.append([f"<b>{e(Lz.get(lg, lg))}</b><br><span class='note'>{e(lg)}</span>"] + cells)
+    grid_tbl = table(["语言"] + list(TYPE_ZH.values()), grid)
+    body = f"""
+<section><h1>训练数据：现在有什么、在哪里、长什么样</h1>
+<p class="sub">合成训练数据目前有两批：第一阶段终版（模板 v6，10 种语言 × 9 类 × 100 页）和第二阶段压测产物（模板 v7，Top-20 语言 × 9 类 × 1,111 页）。两批都已存在 JFS 上，可以直接拿来训练；但第二批原本是为了测速度和成本，内容多样性有限（见下）。</p>
+<div class="kpis"><div class="kpi"><b>{tot:,}</b>可用于训练的页（已扣评测重叠）</div><div class="kpi"><b>20</b>种语言（波兰文、荷兰文还没有训练数据）</div>
+<div class="kpi"><b>9</b>类版面，每种语言约 1 万页</div><div class="kpi"><b>{((load("production.json", {}).get("run200k") or {}).get("gb") or 0):.0f} GB</b>第二批产物大小</div></div></section>
+<section><h2>各语言数据量</h2>{cnt_tbl}
+<p class="note">“第二阶段 v7”每种语言 = 9 类 × 1,111 页 = 9,999 页。“第一阶段 v6”是第一阶段 9000 页终版里该语言的 900 页，减去被抽作合成评测集的 90 页。“书籍正文来自真实 PDF”= 第二批书籍页里正文取自 FinePDFs 真实 PDF 的比例（其余取自维基百科）。右侧是该语言现有的大模型内容包数量。</p></section>
+<section><h2>内容多样性：这批数据最大的短板</h2>
+<div class="grid g2"><div class="card"><h3>现状</h3><p>论文、试卷、PPT、研报、教材、杂志这 6 类的文字来自大模型写的“内容包”（一个包 = 一份完整文档的文字，可排出好几页）。现在每种语言每类只有 20~40 个包（荷兰文、波兰文 6~10 个），却要撑起每类 1,111 页——例如印地文论文包 {hi_paper} 个、论文页 2,222 页，每个包平均被反复使用约 {2222 / max(1, hi_paper):.0f} 次。版式、字体、成像每页都不同，但文字大量重复。</p></div>
+<div class="card"><h3>影响与对策</h3><p>用来做试点训练（看多语种版式和文字体系有没有帮助）是够的；但正式训练要避免模型背下这几百份文字。正式生产 10 万页 / 语言需要每种语言约 3.5 万个新内容包，钱和时间主要花在这一步（见 <a href="production.html">批量生产</a> 页的成本模型）。书籍页不用内容包：正文来自维基百科和 FinePDFs 真实 PDF，正式生产时应把真实 PDF 正文的读入上限从每语种 600 篇调大。</p></div></div></section>
+<section><h2>和评测集的关系（防止“考题泄漏”）</h2>
+<div class="grid g3"><div class="card"><h3>合成评测集（旧 10 语）</h3><p>是从第一阶段 9000 页里抽的 900 页，训练时必须扣掉——上表已扣除。</p></div>
+<div class="card"><h3>合成评测集（全部 22 语）</h3><p>和训练数据共用同一套模板和同一批内容包。用这批数据训练后，合成集上的分数会偏高，不能作为主要依据；以真实评测集为准。要得到干净的合成评测，需要留出一批只给评测用的内容包。</p></div>
+<div class="card"><h3>真实评测集</h3><p>核查发现下表中的文档也在书籍正文池里（原计划的剔除规则当时没有实现，现已补上）。第二批里含有这些文档文字的 <b>{len(hits)}</b> 页，训练前删除（上表“需删”一列）。</p></div></div>
+{ov_tbl}</section>
+<section><h2>数据位置与格式</h2>
+<div class="card"><ul>
+<li>第二批（v7）：JFS <code>processed/synthdog_doc/prod200k/g1~g4/shards/*.parquet</code>，每组 5 种语言、2,084 个分片；每行一页，列为 <code>name / doc_type / lang / branch（成像方式）/ width / height / image（JPEG 字节）/ odb（OmniDocBench 标注 JSON）/ markdown（阅读顺序 Markdown）/ meta（生成参数 JSON）</code>。</li>
+<li>第一批（v6）：JFS <code>processed/synthdog_doc/sdd-v6/pages/</code>，每页 4 个文件（.jpg / .json / .md / .meta.json）。</li>
+<li>拿去训练：serve-train 的数据契约是“messages + 图片”。大数据量推荐其预物化 parquet（内嵌图片字节、全局打散、流式读取）路线；需要写一个转换脚本，把 markdown 作为回答、统一提示词作为提问，并与评测时的输出约定对齐。</li></ul></div></section>
+<section><h2>模板样张（第二批，每种语言 × 每类版面各一页，点击看大图）</h2>
+<p class="note">优先展示“数字原生”成像的页；同一格里的其余页面版式、字体、成像方式各不相同。</p>{grid_tbl}</section>
+"""
+    page(portal, "train.html", "训练数据", body, extra_css="table.t td img{width:104px;border:1px solid var(--line);border-radius:4px;background:#fff}")
 
 
 def build_benchmark(portal):
@@ -512,7 +596,7 @@ def build_p2(portal):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--portal", default=str(D / "portal"))
-    ap.add_argument("--only", default="p2,languages,datapool,benchmark,production")
+    ap.add_argument("--only", default="p2,languages,datapool,train,benchmark,production")
     a = ap.parse_args()
     portal = Path(a.portal)
     todo = a.only.split(",")
@@ -522,6 +606,8 @@ def main():
         build_languages(portal)
     if "datapool" in todo:
         build_datapool(portal)
+    if "train" in todo:
+        build_train(portal)
     if "benchmark" in todo:
         build_benchmark(portal)
     if "production" in todo:
