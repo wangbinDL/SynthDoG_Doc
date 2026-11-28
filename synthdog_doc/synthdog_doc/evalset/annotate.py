@@ -172,11 +172,11 @@ def ask(name, m, regs, img, marks):
     t0 = time.time()
     try:
         text, meta = llm.call(model, prompt, images=[img, marks], max_tokens=48000, effort=effort, key=key,
-                              timeout=1800, retries=2)
+                              timeout=1800, retries=6)
     except RuntimeError as e:
         if name == "opus" and ("max_tokens" in str(e) or "empty response" in str(e)):
             text, meta = llm.call(model, prompt, images=[img, marks], max_tokens=48000, effort="xhigh", key=key,
-                                  timeout=1800, retries=2)
+                                  timeout=1800, retries=6)
             meta["effort_fallback"] = "xhigh"
         else:
             raise
@@ -243,7 +243,34 @@ def consensus(m, regs, answers):
             rec["latex"] = medoid([v.get("latex", "") for v in per[r["id"]].values()])
         elif cat == "table":
             rec["html"] = medoid([v.get("html", "") for v in per[r["id"]].values()])
+        if cat in TEXT_CATS and not re.search(r"\w", rec.get("text") or ""):
+            rec["cat"] = "abandon"                 # answer lines, leader dots: nothing to transcribe
         kept[r["id"]] = rec
+    # text no region covers, reported by >= 2 annotators: added with the box of the region it sits next to (flagged
+    # approximate; the end-to-end metrics match text, not boxes) so models that read it are not penalised
+    missed = [(n, it) for n, a in answers.items() for it in (a.get("missed") or [])
+              if isinstance(it, dict) and re.search(r"\w", str(it.get("text") or ""))]
+    used, after = [False] * len(missed), {}
+    for i, (n, it) in enumerate(missed):
+        if used[i]:
+            continue
+        grp, used[i] = [(n, it)], True
+        for j in range(i + 1, len(missed)):
+            if not used[j] and missed[j][0] not in {g[0] for g in grp} and ned(it["text"], missed[j][1]["text"]) < 0.3:
+                grp.append(missed[j])
+                used[j] = True
+        try:
+            near = int(it.get("near_id"))
+        except (TypeError, ValueError):
+            near = None
+        if len(grp) < 2 or near not in kept:
+            continue
+        cats = collections.Counter(g[1].get("category") for g in grp if g[1].get("category") in TEXT_CATS)
+        rid = 10000 + len(after)
+        kept[rid] = {"cat": cats.most_common(1)[0][0] if cats else "text_block", "box": kept[near]["box"], "id": rid,
+                     "lines": [], "text": medoid([g[1]["text"] for g in grp]), "approx_box": True}
+        after[rid] = near
+        text_src["missed_added"] += 1
     # reading order: mean rank over annotators (regions an annotator omitted get its last rank + 1)
     content = [i for i, rec in kept.items() if rec["cat"] not in NON_ORDER]
     ranks = collections.defaultdict(list)
@@ -251,7 +278,7 @@ def consensus(m, regs, answers):
         od = [i for i in od if i in content]
         pos = {i: k for k, i in enumerate(od)}
         for i in content:
-            ranks[i].append(pos.get(i, len(od)))
+            ranks[i].append(pos[after[i]] + 0.5 if i in after and after[i] in pos else pos.get(i, len(od)))
     order = sorted(content, key=lambda i: (sum(ranks[i]) / max(1, len(ranks[i])), kept[i]["box"][1]))
     # pairwise order agreement (Kendall-style) between annotators
     def kendall(a, b):
@@ -270,7 +297,8 @@ def consensus(m, regs, answers):
     for k, (rid, rec) in enumerate(sorted(kept.items(), key=lambda kv: (kv[1]["box"][1], kv[1]["box"][0]))):
         x0, y0, x1, y1 = rec["box"]
         det = {"category_type": rec["cat"], "poly": [x0, y0, x1, y0, x1, y1, x0, y1], "ignore": False,
-               "order": rank_of.get(rid), "anno_id": f"box_id_{k}", "attribute": {}}
+               "order": rank_of.get(rid), "anno_id": f"box_id_{k}",
+               "attribute": {"box_approx": True, "source": "annotators_missed"} if rec.get("approx_box") else {}}
         if "text" in rec:
             det["text"] = rec["text"]
             det["line_with_spans"] = [{"poly": [l["poly"][0], l["poly"][1], l["poly"][2], l["poly"][1], l["poly"][2],
@@ -304,6 +332,7 @@ def main():
     ap.add_argument("--pdfs", required=True)
     ap.add_argument("--annotators", default="gemini,astra,opus")
     ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--workers-per", default="", help="per-annotator concurrency, e.g. gemini=12,astra=16,opus=24")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--consensus-only", action="store_true")
     a = ap.parse_args()
@@ -345,7 +374,8 @@ def main():
     if not a.consensus_only:
         stats = collections.Counter()
         # one pool per annotator: a slow model (long max-effort thinking) must not starve the others
-        pools = {n: ThreadPoolExecutor(a.workers) for n in names}
+        per = dict(kv.split("=") for kv in a.workers_per.split(",") if "=" in kv) if a.workers_per else {}
+        pools = {n: ThreadPoolExecutor(int(per.get(n, a.workers))) for n in names}
         futs = {}
         for j in sorted(jobs, key=lambda j: j[0]["page_id"]):
             futs[pools[j[1]].submit(work, j)] = j

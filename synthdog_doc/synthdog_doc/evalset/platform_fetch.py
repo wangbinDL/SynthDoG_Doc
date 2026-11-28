@@ -55,7 +55,6 @@ def submit(a):
     urls = list(dict.fromkeys(j["url"] for j in jobs))
     (Path(a.out) / "platform_batch.jsonl").write_text("".join(json.dumps(
         {k: j[k] for k in ("id", "lang", "type", "url", "domain")}, ensure_ascii=False) + "\n" for j in jobs))
-    tid = plat.submit("common_file_downloader", urls[0], "sdd_evalset_pdfs_probe") if False else None
     r = plat.post('/api/v1/tasks/run', {'task_type': 'common_file_downloader', 'name': f'sdd_evalset_pdfs_{len(urls)}',
                                          'task_input_type': 'array', 'task_input': {'url': urls},
                                          'notify_user_on_result': False})
