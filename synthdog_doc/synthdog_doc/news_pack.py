@@ -75,18 +75,19 @@ def candidates(lang, n, seed=11):
     return out
 
 
-def work(lang, i, art, model, effort, out_path):
+def work(lang, i, art, model, effort, out_path, key="main"):
     L = LANGS[lang]
     paras = "\n".join(f"[{k}] {p[:900]}" for k, p in enumerate(art["paras"]))
     prompt = PROMPT.format(lname=L.name, countries=", ".join(L.countries), domain=art.get("domain", ""),
                            title=art.get("title", ""), paras=paras)
-    text, meta = llm.call(model, prompt, max_tokens=6000, effort=effort, timeout=600)
+    text, meta = llm.call(model, prompt, max_tokens=6000, effort=effort, timeout=600, key=key)
     obj = llm.extract_json(text)
     if isinstance(obj, list):
         obj = next((x for x in obj if isinstance(x, dict)), {})
     keep = [k for k in obj.get("keep", []) if isinstance(k, int) and 0 <= k < len(art["paras"])]
     obj["body"] = [art["paras"][k] for k in keep] if keep else art["paras"]
     obj.pop("keep", None)
+    obj.update({"_usage": meta.get("usage"), "_model": meta.get("model")})
     obj.update({"_idx": i, "_lang": lang, "url": art.get("url"), "domain": art.get("domain"), "date": art.get("date"),
                 "source_kind": art.get("kind"), "orig_title": art.get("title")})
     with _lock:
@@ -102,10 +103,12 @@ def main():
     ap.add_argument("--model", default="gpt-6.1-sol")
     ap.add_argument("--effort", default="low")
     ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--key", default="main")
+    ap.add_argument("--out", default="/data/synthdog-doc/content", help="content root (bake-off runs use their own)")
     a = ap.parse_args()
     jobs = []
     for lang in a.langs.split(","):
-        out = Path("/data/synthdog-doc/content") / lang / "news.jsonl"
+        out = Path(a.out) / lang / "news.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
         done = {json.loads(x)["_idx"] for x in out.read_text().splitlines()} if out.exists() else set()
         for i, art in enumerate(candidates(lang, a.n)):
@@ -116,7 +119,7 @@ def main():
     print("jobs", len(jobs), flush=True)
     ok = fail = 0
     with ThreadPoolExecutor(a.workers) as ex:
-        futs = {ex.submit(work, l, i, art, a.model, a.effort, out): (l, i) for l, i, art, out in jobs}
+        futs = {ex.submit(work, l, i, art, a.model, a.effort, out, a.key): (l, i) for l, i, art, out in jobs}
         for f in as_completed(futs):
             try:
                 r = f.result()

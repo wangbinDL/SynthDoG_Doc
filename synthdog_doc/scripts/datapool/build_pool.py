@@ -41,6 +41,36 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 _PHONE = re.compile(r"\+?\d[\d\s().-]{7,}\d")
 
 
+class Sink:
+    """Stream rows to a zstd parquet file in batches (a whole language never sits in memory)."""
+
+    def __init__(self, path, batch=20000):
+        self.path, self.batch, self.buf, self.writer, self.n, self.chars = Path(path), batch, [], None, 0, 0
+
+    def add(self, row):
+        self.buf.append(row)
+        self.n += 1
+        self.chars += row.get("n_chars", 0)
+        if len(self.buf) >= self.batch:
+            self.flush()
+
+    def flush(self):
+        if not self.buf:
+            return
+        t = pa.Table.from_pylist(self.buf)
+        if self.writer is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.writer = pq.ParquetWriter(str(self.path) + ".tmp", t.schema, compression="zstd")
+        self.writer.write_table(t.cast(self.writer.schema))
+        self.buf = []
+
+    def close(self):
+        self.flush()
+        if self.writer is not None:
+            self.writer.close()
+            Path(str(self.path) + ".tmp").rename(self.path)
+
+
 def purity(text, script):
     rng = SCRIPT_RANGES.get(script) or SCRIPT_RANGES["latin"]
     letters = [c for c in text[:20000] if c.isalpha()]
@@ -79,7 +109,7 @@ def build_finepdfs(lang, src, out, exclude):
           "docs_kept": 0, "pages_kept": 0, "chars_kept": 0, "extractor": {}, "domains": 0}
     cols = ["id", "url", "text", "full_doc_lid", "full_doc_lid_score", "duplicate_count", "is_truncated",
             "extractor", "ocr_quality_scores", "page_ends", "fw_edu_scores", "dump"]
-    rows, domains = [], set()
+    sink, domains = Sink(Path(out) / lang / "finepdfs_pages.parquet"), set()
     want_lid = cfg
     for f in files:
         pf = pq.ParquetFile(str(f))
@@ -125,22 +155,18 @@ def build_finepdfs(lang, src, out, exclude):
                     pt = unicodedata.normalize("NFC", text[prev:e]).strip()
                     prev = e
                     if len(pt) >= min_page:
-                        rows.append({"doc_id": r.get("id"), "page": pi, "text": pt, "n_chars": len(pt),
-                                     "url": r.get("url") or "", "extractor": r.get("extractor") or "",
-                                     "fw_edu": first_num(r.get("fw_edu_scores")), "dump": r.get("dump") or ""})
+                        sink.add({"doc_id": r.get("id"), "page": pi, "text": pt, "n_chars": len(pt),
+                                  "url": r.get("url") or "", "extractor": r.get("extractor") or "",
+                                  "fw_edu": first_num(r.get("fw_edu_scores")), "dump": r.get("dump") or ""})
                         kept_pages += 1
                 if kept_pages:
                     st["docs_kept"] += 1
                     st["pages_kept"] += kept_pages
                     st["extractor"][r.get("extractor") or "?"] = st["extractor"].get(r.get("extractor") or "?", 0) + 1
                     domains.add((r.get("url") or "").split("/")[2] if (r.get("url") or "").count("/") >= 2 else "")
-    st["chars_kept"] = sum(x["n_chars"] for x in rows)
+    sink.close()
+    st["chars_kept"] = sink.chars
     st["domains"] = len(domains)
-    od = Path(out) / lang
-    od.mkdir(parents=True, exist_ok=True)
-    if rows:
-        pq.write_table(pa.Table.from_pylist(rows), str(od / "finepdfs_pages.parquet"), compression="zstd",
-                       row_group_size=20000)
     return st
 
 
@@ -151,7 +177,7 @@ def build_fineweb(lang, src, out):
     files = sorted((Path(src) / ds / cfg).glob("*.parquet"))
     script = {"urdu": "arabic"}.get(L.script, L.script)
     st = {"docs_in": 0, "lang_score": 0, "script": 0, "short": 0, "lid": 0, "docs_kept": 0, "chars_kept": 0}
-    rows = []
+    sink = Sink(Path(out) / lang / "fineweb_docs.parquet")
     for f in files:
         pf = pq.ParquetFile(str(f))
         have = [c for c in ("id", "url", "text", "language_score", "date") if c in pf.schema_arrow.names]
@@ -171,15 +197,11 @@ def build_fineweb(lang, src, out):
                 if purity(text, script) < 0.8:
                     st["script"] += 1
                     continue
-                rows.append({"id": r.get("id"), "url": r.get("url") or "", "text": unicodedata.normalize("NFC", text),
-                             "n_chars": len(text), "date": str(r.get("date") or "")})
+                sink.add({"id": r.get("id"), "url": r.get("url") or "", "text": unicodedata.normalize("NFC", text),
+                          "n_chars": len(text), "date": str(r.get("date") or "")})
                 st["docs_kept"] += 1
-    st["chars_kept"] = sum(x["n_chars"] for x in rows)
-    if rows:
-        od = Path(out) / lang
-        od.mkdir(parents=True, exist_ok=True)
-        pq.write_table(pa.Table.from_pylist(rows), str(od / "fineweb_docs.parquet"), compression="zstd",
-                       row_group_size=20000)
+    sink.close()
+    st["chars_kept"] = sink.chars
     return st
 
 
@@ -205,7 +227,10 @@ def main():
     a = ap.parse_args()
     langs = list(FINEPDFS) if a.langs == "all" else a.langs.split(",")
     exclude = set(Path(a.exclude).read_text().split()) if a.exclude and Path(a.exclude).exists() else set()
-    stats = {}
+    stats = json.loads(Path(a.stats).read_text()) if Path(a.stats).exists() else {}
+    stats = {k: v for k, v in stats.items() if "error" not in v}
+    langs = [lg for lg in langs if lg not in stats]
+    print("to build:", langs, flush=True)
     with ProcessPoolExecutor(a.workers) as ex:
         futs = {ex.submit(one, lg, a.src, a.out, exclude): lg for lg in langs}
         for f in as_completed(futs):
