@@ -11,6 +11,10 @@ from ..textkit import words_html
 ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
 
 
+# Share of tategaki (vertical) body pages per language (Japanese books are mostly vertical).
+VERTICAL_P = {"ja": 0.6, "zh-Hant": 0.35}
+
+
 class BookPage(Doc):
     def __init__(self, rng, lang, version=0):
         super().__init__("book", lang, rng, version)
@@ -139,6 +143,8 @@ class BookPage(Doc):
             zones.append(B.zone(left, H - mb + body_px * 1.0, cw, body_px * 1.8,
                                 B.span_text(folio, self.lang, "page_number", cls="pn"),
                                 style=f"text-align:{r.choice(['center', 'center', 'end' if recto else 'start'])}"))
+        if role in ("opener", "body", "section") and r.random() < VERTICAL_P.get(self.lang, 0.0):
+            return self.build_vertical(art, left, mt, cw, H, mb, body_px, lh, chap_no, chap_title, folio, recto)
         flow = []
         top_from = None
         if role in ("toc", "imprint"):
@@ -202,6 +208,57 @@ class BookPage(Doc):
         if ncol == 2:
             self.meta["layout"] = "double_column"
         css = self.css(body_px, lh)
+        return self.spec("".join(zones), css)
+
+    def build_vertical(self, art, left, mt, cw, H, mb, body_px, lh, chap_no, chap_title, folio, recto):
+        """Tategaki page (ja / zh-Hant books): one vertical text block, lines top-to-bottom stacked right to left;
+        running head and folio stay horizontal in the margins."""
+        r = self.rng
+        self.meta.update(layout="vertical", writing_mode="vertical-rl")
+        zones = []
+        if r.random() < 0.7:
+            hd = B.span_text(art["title"] if recto else chap_title, self.lang, "header", cls="vrh")
+            zones.append(B.zone(left, mt - body_px * 2.2, cw, body_px * 1.6, hd,
+                                style=f"text-align:{'start' if recto else 'end'}"))
+        zones.append(B.zone(left, H - mb + body_px * 0.9, cw, body_px * 1.6,
+                            B.span_text(folio, self.lang, "page_number", cls="pn"),
+                            style=f"text-align:{r.choice(['center', 'start' if recto else 'end'])}"))
+        flow = []
+        if self.role == "opener":
+            lbl = C.L(self.lang, "Chapter", grp="book")
+            flow.append(B.span_text(f"{lbl} {self.num(chap_no)}", self.lang, "title", cls="vchapno",
+                                    extra='data-sub="1"'))
+            flow.append(B.heading(chap_title, self.lang, level=1, cls="vchapt", kwn=False))
+        paras = [q for sec in art["sections"] for q in sec["paras"]]
+        heads = [sec["heading"] for sec in art["sections"] if sec["heading"]]
+        if self.role != "opener":
+            paras = paras[r.randint(0, max(0, len(paras) // 3)):]
+        hi = 0
+        for i, ptxt in enumerate(paras[:40]):
+            if i > 0 and self.role == "section" and i == 1 and hi < len(heads):
+                flow.append(B.heading(heads[hi], self.lang, level=2, cls="vsh"))
+                hi += 1
+            cls = "vp" + (" cont" if (i == 0 and self.role != "opener") else "")
+            flow.append(B.para(ptxt, self.lang, cls=cls))
+        zones.append(B.zone(left, mt, cw, H - mt - mb, f'<div class="vbody">{"".join(flow)}</div>', cls="vflow",
+                            zorder=1))
+        f_body = self.body_font("serif")
+        f_head = self.fonts.stack(r.choice(["serif", "display"]))
+        vlh = round(r.uniform(1.65, 1.95), 2)
+        paper = r.choice(["#ffffff", "#fffdf7", "#fbf8f0"])
+        css = f"""
+#page{{font-family:{f_body};font-size:{body_px:.2f}px;line-height:{lh};color:#161616;background:{paper};}}
+.vflow .vbody{{writing-mode:vertical-rl;text-orientation:mixed;width:100%;height:100%;overflow:hidden;
+  line-height:{vlh};text-align:justify;}}
+.vp{{margin:0;text-indent:1em;}}
+.vp.cont{{text-indent:0;}}
+.vchapno{{font-family:{f_head};font-size:{body_px * 1.15:.1f}px;margin-left:0.8em;margin-top:{r.uniform(1.0, 3.0):.1f}em;
+  color:#333;}}
+.vchapt{{font-family:{f_head};font-size:{body_px * r.uniform(1.7, 2.3):.1f}px;font-weight:{r.choice([400, 700])};
+  margin:0 0 0 1.6em;padding-top:{r.uniform(1.5, 4.0):.1f}em;line-height:1.3;}}
+.vsh{{font-family:{f_head};font-size:{body_px * 1.2:.1f}px;margin:0 0.6em 0 1.0em;padding-top:2em;line-height:1.4;}}
+.vrh,.pn{{font-size:{body_px * 0.8:.1f}px;color:#333;}}
+"""
         return self.spec("".join(zones), css)
 
     def css(self, body_px, lh):

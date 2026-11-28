@@ -23,7 +23,7 @@ TYPO = {
     "hant": dict(lh=1.3, size=0.96, ls_ok=False, italic=False, hyph=False, justify=0.97, caps=False),
     "japanese": dict(lh=1.3, size=0.96, ls_ok=False, italic=False, hyph=False, justify=0.97, caps=False),
     "hangul": dict(lh=1.24, size=0.98, ls_ok=False, italic=False, hyph=False, justify=0.85, caps=False),
-    "thai": dict(lh=1.42, size=1.12, ls_ok=False, italic=False, hyph=False, justify=0.45, caps=False),
+    "thai": dict(lh=1.42, size=1.12, ls_ok=False, italic=False, hyph=False, justify=0.25, caps=False),
 }
 # Latin-script languages with stacked diacritics need a little more leading.
 LH_LANG = {"vi": 1.1}

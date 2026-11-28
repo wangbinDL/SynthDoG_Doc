@@ -213,8 +213,39 @@ def _fix_escapes(s):
     return "".join(out)
 
 
+def _balance_brackets(s):
+    """Repair the most common LLM JSON slip -- a stray or missing closing bracket -- by dropping closers that do not
+    match the open bracket (outside strings) and appending the missing ones at the end."""
+    out, stack, in_str, esc = [], [], False, False
+    pairs = {"}": "{", "]": "["}
+    for c in s:
+        if in_str:
+            out.append(c)
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c in "{[":
+            stack.append(c)
+        elif c in "}]":
+            if not stack or stack[-1] != pairs[c]:
+                continue                       # stray closer
+            stack.pop()
+        out.append(c)
+    out += ["}" if b == "{" else "]" for b in reversed(stack)]
+    return "".join(out)
+
+
 def _loads_lenient(s):
-    return json.loads(_fix_escapes(s), strict=False)
+    try:
+        return json.loads(_fix_escapes(s), strict=False)
+    except json.JSONDecodeError:
+        return json.loads(_balance_brackets(_fix_escapes(s)), strict=False)
 
 
 def extract_json(text):
