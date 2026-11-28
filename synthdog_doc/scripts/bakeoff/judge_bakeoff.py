@@ -28,8 +28,9 @@ from synthdog_doc.langs import LANGS  # noqa: E402
 
 PRICE = {  # (input, output) USD / 1M tokens -- assumptions (CCG round 2), reasoning tokens billed as output
     "sol-low": (1.25, 10.0), "deepseek-flash": (0.3, 1.2), "sonnet-low": (3.0, 15.0), "gemini-low": (2.0, 12.0),
-    "step5": (0.5, 2.0), "qwen3.8-27b": (0.0, 0.0)}
-FAMILY = {"sol-low": "gpt", "deepseek-flash": "deepseek", "sonnet-low": "claude", "gemini-low": "gemini", "step5": "step"}
+    "step5": (0.5, 2.0), "qwen27-local": (0.0, 0.0)}   # self-hosted: priced by GPU time instead (see production.json)
+FAMILY = {"sol-low": "gpt", "deepseek-flash": "deepseek", "sonnet-low": "claude", "gemini-low": "gemini", "step5": "step",
+          "qwen27-local": "qwen", "qwen27-think": "qwen"}
 JUDGE_PROMPT = """You are a senior native {lname} editor in {countries}. Two candidate content packs (A and B) were
 written for a realistic printed {kind_desc}. Judge which one is better as authentic {lname} document content:
 - native fluency (reads like original {lname} writing, not translation), correct orthography and script

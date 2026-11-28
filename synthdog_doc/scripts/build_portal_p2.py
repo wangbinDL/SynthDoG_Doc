@@ -331,7 +331,7 @@ def build_benchmark(portal):
 <section><h2>总表（合成集）</h2>{main_tbl}
 <p class="note">综合分 = ((1 − 文本编辑距离) × 100 + 公式 CDM × 100 + 表格 TEDS × 100) / 3（OmniDocBench v1.5 口径，评分镜像 omnidocbench-eval:v16-flat1）。合成集由两批组成：旧 10 语 900 页（模板 v6）与新 12 语 1080 页（模板 v7），合在一起统一打分。“页级字符错误率”是补充指标：官方文本归一化会删掉组合附标（天城文元音符号、阿拉伯文标音符号等），这里保留它们、按整页阅读顺序计算。失败页（拒答、截断、超时）照常按空输出计分，不剔除；重试一次仍失败的页如实计 0。</p></section>
 <section><h2>分语言消融（合成集，综合分）</h2>{lang_tbl}
-<p class="note">红色 = 低于 80。MinerU2.5-Pro 与 PaddleOCR-VL-1.6 在阿拉伯文、乌尔都文（Nastaliq）、波斯文上明显掉分；通用大模型在这些语言上保持 87~94。Claude Opus 5.5 的英文分被 9 页英文报纸拖低：这些页两次请求都被网关拦截（输出内容过滤 / 流中断），按规则计为空输出。</p></section>
+<p class="note">红色 = 低于 80。MinerU2.5-Pro 与 PaddleOCR-VL-1.6 在阿拉伯文、乌尔都文（Nastaliq）、波斯文上掉到 56~73；Qwen3.8-27B 与三个 API 大模型在这三种语言上保持 87~96，Qwen3.5-4B 为 75~79。Claude Opus 5.5 的英文分被 9 页英文报纸拖低：这些页两次请求都被网关拦截（输出内容过滤 / 流中断），按规则计为空输出。</p></section>
 <section><h2>分文档类型（文本得分）</h2>{type_tbl}
 <p class="note">文本得分 = (1 − 文本编辑距离) × 100。书籍、报纸等版面多数页没有公式或表格，算不出三项合成的综合分，所以按类型只比文本。</p></section>
 <section><h2>分成像方式（综合分）</h2>{br_tbl}</section>
@@ -417,10 +417,12 @@ def build_production(portal):
 <li>输出改为大分片：每批页面写成一个 zstd 压缩的 Parquet 分片（图像 JPEG 字节 + 标注 + Markdown + 元数据），不再每页 4 个小文件。</li>
 <li>JPEG 截图、OpenCV 单线程：避免几十个进程互相抢线程。</li>
 <li>分阶段计时：排版 JS 只要约 30 毫秒；真正耗时的是截图编码、图像退化与解码 —— 下一步优化方向。</li></ul></div>
-<div class="card"><h3>结论</h3><ul><li>64 进程（= 核数）最好：再多进程只会互相抢占。</li><li>单台 64 核每小时约 8~10 万页；渲染不是瓶颈，瓶颈在 LLM 内容包（见下）。</li></ul></div></div></section>
+<div class="card"><h3>结论</h3><ul><li>单台机器上进程数 = 核数（64）最好：96 进程反而更慢，互相抢占。</li>
+<li>更高并发靠多台横向扩展：下面的 20 万页压测就是 4 台 × 64 进程 = <b>256 路并发</b>，各台互不依赖，吞吐线性叠加（约 98 页 / 秒）。</li>
+<li>单台 64 核每小时约 8~10 万页；渲染不是瓶颈，瓶颈在 LLM 内容包（见下）。</li></ul></div></div></section>
 <section><h2>Top-20 × 每语种 1 万页压测</h2>{prod_html}</section>
 <section><h2>内容包改写模型选型（bake-off）</h2>
-<p>同样的提示词和真实种子文本，7 个难语种（阿拉伯、印地、孟加拉、日、泰、繁中、德）× 3 类任务（论文、试卷、新闻编辑）× 每格 10 包；评委不评自家模型（Opus 评 GPT / DeepSeek / Gemini，Gemini 评 Sonnet），A/B 位置随机。</p>
+<p>同样的提示词和真实种子文本，7 个难语种（阿拉伯、印地、孟加拉、日、泰、繁中、德）× 3 类任务（论文、试卷、新闻编辑）× 每格 10 包；评委不评自家模型（Opus 评 GPT / DeepSeek / Gemini / Step / Qwen，Gemini 评 Sonnet），A/B 位置随机。</p>
 {botbl}
 <p class="note">{e(bo.get("conclusion", ""))}</p></section>
 <section><h2>成本模型</h2><div class="card"><ul>{cost_html}</ul></div></section>

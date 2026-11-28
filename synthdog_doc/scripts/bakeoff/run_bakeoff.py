@@ -25,6 +25,8 @@ CANDIDATES = {   # name -> (model id, key, effort)
     "sonnet-low": ("claude-sonnet-5-5-coding", "main", "low"),
     "gemini-low": ("@gemini", "mid", "low"),
     "step5": ("Step-5-preview-pretrain", "main", None),
+    "qwen27-local": ("Qwen3.8-27B", "@local", "nothink"),   # self-hosted vLLM on 1 GPU, thinking off
+    "qwen27-think": ("Qwen3.8-27B", "@local", "think"),     # same server, thinking on
 }
 
 
@@ -35,12 +37,15 @@ def main():
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--candidates", default=",".join(CANDIDATES))
     ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--local-base", default="", help="URL of the self-hosted server for '@local' candidates")
     a = ap.parse_args()
     langs = a.langs.split(",")
     for name in a.candidates.split(","):
         model, key, effort = CANDIDATES[name]
         if model == "@gemini":
             model = llm.gemini_model_for_key(key)
+        if key == "@local":
+            key = a.local_base
         out = Path(a.out) / name / "content"
         print(f"== {name}: {model} effort={effort}", flush=True)
         content_gen.run(out, langs, {"paper": a.n, "exam": a.n}, model, effort, a.workers,

@@ -31,6 +31,8 @@ def _read_env(path, names):
 
 
 def key_and_base(name="main"):
+    if name.startswith(("http://", "https://")):        # self-hosted OpenAI-compatible server (vLLM), no auth
+        return os.environ.get("SDD_LOCAL_KEY", "EMPTY"), name.rstrip("/")
     p = MP_DIR / "keys" / f"{name}.env"
     k = _read_env(p, ["MP_KEY", "MODELPROXY_API_KEY", "ANTHROPIC_API_KEY"])
     b = _read_env(p, ["MP_BASE"]) or "https://mp.z01.normandyfunc.com"
@@ -206,7 +208,9 @@ def _openai(base, k, model, prompt, images, system, max_tokens, effort, timeout,
         msgs.append({"role": "user", "content": prompt})
     body = {"model": model, "max_tokens": max_tokens, "stream": True, "messages": msgs,
             "stream_options": {"include_usage": True}}   # token usage for cost accounting
-    if effort:
+    if effort in ("nothink", "think"):                     # Qwen-style chat template switch (vLLM)
+        body["chat_template_kwargs"] = {"enable_thinking": effort == "think"}
+    elif effort:
         body["reasoning_effort"] = effort
     if temperature is not None and "astra" not in model and "sol" not in model:
         body["temperature"] = temperature
@@ -229,6 +233,8 @@ def _openai(base, k, model, prompt, images, system, max_tokens, effort, timeout,
                     chunks.append(d["content"])
                 stop = ch.get("finish_reason") or stop
     text = "".join(chunks)
+    if effort == "think" and "</think>" in text:          # self-hosted server without a reasoning parser
+        text = text.rsplit("</think>", 1)[1]
     if not text.strip():
         raise RuntimeError(f"empty response stop={stop}")
     return text, {"model": seen or model, "stop": stop, "usage": usage}

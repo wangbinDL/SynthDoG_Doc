@@ -19,6 +19,11 @@ DISPLAY = {"MinerU2.5-Pro": "MinerU2.5-Pro", "PaddleOCR-VL-1.6": "PaddleOCR-VL-1
            "claude-opus-5-5-pretrain": "Claude Opus 5.5", "gt-oracle": "GT（自检）"}
 
 
+# leave-one-out GT variants (real eval set): job "<model>__<variant>" scored against the GT rebuilt without one
+# annotator; a model's own variant is the one without its vote
+SELF_VARIANT = {"gpt-6-astra": "noastra", "claude-opus-5-5-pretrain": "noopus"}
+
+
 def overall(te, cdm, teds):
     if te is None or cdm is None or teds is None:
         return None
@@ -41,6 +46,12 @@ def main():
     stats = json.loads((run / "collect_stats.json").read_text()) if (run / "collect_stats.json").exists() else {}
     tm = json.loads((run / "textmetric.json").read_text()) if (run / "textmetric.json").exists() else {}
     rep = {"models": {}}
+    variants = {}
+    for name in [n for n in jobs if "__" in n]:
+        base, var = name.split("__", 1)
+        j = jobs.pop(name)
+        variants.setdefault(base, {})[var] = {k: j.get(k) for k in ("overall", "text_edit", "formula_cdm", "table_teds",
+                                                                    "reading_order_edit")}
     for name in [n for n in ORDER if n in jobs] + [n for n in jobs if n not in ORDER]:
         j = jobs[name]
         bpa = j.get("by_page_attribute") or {}
@@ -59,6 +70,9 @@ def main():
             "table_teds_s": j.get("table_teds_s"), "reading_order_edit": j.get("reading_order_edit"),
             "healthy": j.get("healthy"), "buckets": buckets, "run": stats.get(name, {}),
             "text_metric": (tm.get(name) or {}).get("agg")}
+        if name in variants:
+            rep["models"][name]["variants"] = variants[name]
+            rep["models"][name]["overall_loo"] = (variants[name].get(SELF_VARIANT.get(name)) or {}).get("overall")
     Path(a.out).write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     if a.md:
         lines = ["| 模型 | Overall | 文本编辑距离↓ | 公式 CDM | 表格 TEDS | TEDS-S | 阅读顺序↓ | 页级字符错误率↓ |",
